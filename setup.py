@@ -2,15 +2,15 @@
 import setuptools
 from setuptools import setup
 
-setup(name='spextractor', version='0.5',
+setup(name='spextractor', version='0.1',
       description='Automatic extractor of spectral features through Gaussian Processes',
-      url='https://github.com/sepap/spextractor',
-      author='Seméli Papadogiannakis',
-      author_email='semeli@fysikum.su.se',
+      url='https://github.com/anthonyburrow/spextractor',
+      author='Anthony Burrow',
+      author_email='anthony.r.burrow-1@ou.edu',
       license='GPL-v3',
       packages=setuptools.find_packages(),
       include_package_data=True,
-      install_requires=['numpy', 'scipy', 'GPy', 'scikit-learn'],
+      install_requires=['numpy', 'scipy', 'GPy', 'scikit-learn==0.21.3', 'pandas'],
       optional=['matplotlib'],
       classifiers=['Programming Language :: Python',
                    'Programming Language :: Python :: 2',

@@ -1,461 +1,614 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Thu Jun 11 13:13:56 2015
-Automated pEW and velocity extractor.
-@author: Seméli Papadogiannakis
-"""
 from __future__ import division, print_function
 import time
 import math
 
 import numpy as np
 import matplotlib.pyplot as plt
-from astropy.io import ascii
+from pandas import isna
 
-from scipy import interpolate
-from scipy import signal
+from scipy import interpolate, signal
 
 from sklearn.cluster import DBSCAN, MeanShift
 
 import GPy
 
+from .io import load_spectra
+from .downsample import downsample, get_downsample_factor
+from .log import setup_log
+from .manual import ManualFit
+
 plt.ioff()
 
-# Element, rest wavelength, low_1, high_1, low_2, high_2
-LINES_Ia = [('Ca II H&K', 3945.12, 3450, 3800, 3800, 3950),
-            ('Si 4000A', 4129.73, 3840, 3950, 4000, 4200),
-            ('Mg II 4300A', 4481.2, 4000, 4250, 4300, 4700),
-            ('Fe II 4800A', 5083.42, 4300, 4700, 4950, 5600),
-            ('S W', 5536.24, 5050, 5300, 5500, 5750),
-            ('Si II 5800A', 6007.7, 5400, 5700, 5800, 6000),
-            ('Si II 6150A', 6355.1, 5800, 6100, 6200, 6600),
-            ('Ca II IR', 8150, 7800, 8000, 8500, 8800)
-            ]
+# Element: rest wavelength, low_1, low_2, high_1, high_2
+LINES_Ia = {'Ca II H&K': (3945.12, 3450, 3800, 3800, 3950),
+            'Si 4000A': (4129.73, 3840, 3950, 4000, 4200),
+            'Mg II 4300A': (4481.2, 4000, 4250, 4300, 4700),
+            'Fe II 4800A': (5083.42, 4300, 4700, 4950, 5600),
+            'S W': (5536.24, 5050, 5300, 5500, 5750),
+            'Si II 5800A': (6007.7, 5400, 5700, 5800, 6000),
+            'Si II 6150A': (6355.1, 5800, 6100, 6200, 6600)
+            }
 
-LINES_Ib = [('Fe II', 5169, 4950, 5050, 5150, 5250),
-            ('He I', 5875, 5350, 5450, 5850, 6000)]
+LINES_Ib = {'Fe II': (5169, 4950, 5050, 5150, 5250),
+            'He I': (5875, 5350, 5450, 5850, 6000)
+            }
 
-LINES_Ic = [('Fe II', 5169, 4950, 5050, 5150, 5250),
-            ('O I', 7773, 7250, 7350, 7750, 7950)]
+LINES_Ic = {'Fe II': (5169, 4950, 5050, 5150, 5250),
+            'O I': (7773, 7250, 7350, 7750, 7950)
+            }
 
-LINES = dict(Ia=LINES_Ia, Ib=LINES_Ib, Ic=LINES_Ic)
-
-
-def _sanitize(string):
-    '''Replace LaTeX tokens'''
-    return string.replace('_', '-')
+Lines = dict(Ia=LINES_Ia, Ib=LINES_Ib, Ic=LINES_Ic)
 
 
-def pEW(wavelength, flux, cont_coords):
-    '''
-    Calculates the pEW between two chosen points.(cont_coords to be
-    inputed as np.array([x1,x2], [y1,y2])
-    '''
-    cont = interpolate.interp1d(cont_coords[0], cont_coords[1],
-                                bounds_error=False,
-                                fill_value=1)  # define pseudo continuum with cont_coords
-    nflux = flux / cont(
-        wavelength)  # normalize flux within the pseudo continuum
-    pEW = 0
-    for i in range(len(wavelength)):
-        if wavelength[i] > cont_coords[0, 0] and wavelength[i] < cont_coords[0, 1]:
-            dwave = 0.5 * (wavelength[i + 1] - wavelength[i - 1])
-            pEW += dwave * (1 - nflux[i])
+class Spextractor:
 
-    flux_err = np.abs(signal.cwt(flux, signal.ricker, [1])).mean()
-    pEW_stat_err = flux_err
-    pEW_cont_err = np.abs(cont_coords[0, 0] - cont_coords[0, 1]) * flux_err
-    pEW_err = math.hypot(pEW_stat_err, pEW_cont_err)
-    return pEW, pEW_err
+    def __init__(self, data, z=None, remove_gaps=True, SNtype='Ia',
+                 manual_range=False, auto_prune=True):
 
+        log_fn = None
+        if isinstance(data, str):
+            log_fn = '%s.log' % data.rsplit('.', 1)[0]
+        self.logger = setup_log(log_fn)
 
-def gaussian(x, AB, mean, sigma, baseline):
-    '''
-    x = in this case normalised time
-    AB = Amplitude of the secondary bump
-    x0 = The normalised time of the secondary bump max
-    sigma = width of the gaussian
-    '''
-    return baseline + AB * np.exp(-(x - mean) ** 2 / (2 * sigma ** 2))
+        self.wave, self.flux, self.flux_err = self._setup_data(data)
+        self._correct_redshift(z)
+        self._normalize_flux()
 
+        if remove_gaps:
+            self._remove_gaps()
 
-# Import the spectra
-def load_spectra(filename, z):
-    '''
-    Loading spectra of different types, except .fits files.
-    '''
-    # Method 1
-    try:
-        data = ascii.read(filename)
+        if isinstance(SNtype, str):
+            self.lines = Lines[SNtype]
+        else:
+            self.lines = SNtype
+
+        if manual_range:
+            self.logger.info('Manually changing feature bounds.')
+            m = ManualFit(self.wave, self.flux, self.lines, self.logger)
+            self.lines = m.def_lines
+
+        if auto_prune:
+            self._auto_prune()
+            self._normalize_flux()   # If an error is raised, the spectrum is empty
+
+        # Instance variables
+        self.outlier_downsample_factor = 20
+
+        self.wave_pred = None
+        self.mean = None
+        self.variance = None
+        self.m = None
+        self.kernel = None
+
+        self.pew = dict()
+        self.pew_err = dict()
+        self.vel = dict()
+        self.vel_err = dict()
+        self.lambda_hv = dict()
+        self.lambda_hv_err = dict()
+        self.vel_hv = dict()
+        self.vel_hv_err = dict()
+        self.line_depth = dict()
+
+        self.rsi = None
+
+    def _setup_data(self, data):
+        """Reads data from file if needed."""
+        if isinstance(data, str):
+            self.logger.info('Loading data from %s\n' % data)
+            return load_spectra(data)
+
+        wave = data[:, 0]
         flux = data[:, 1]
-        wavel = data[:, 0] / (1 + z)
-        flux /= np.nanmax(flux)
-        if np.any(np.isnan(flux)) or np.any(np.isnan(wavel)):
-            valid = np.isfinite(wavel) & np.isfinite(flux)
-            wavel = wavel[valid]
-            flux = flux[valid]
-        return wavel, flux
-    except Exception as e:
-        prev = e
+        try:
+            flux_err = data[:, 2]
+        except IndexError:
+            msg = 'No flux uncertainties found while reading file.'
+            self.logger.warning(msg)
+            flux_err = np.zeros(len(flux))
 
-    # Method 2
-    try:
-        data = np.genfromtxt(filename)
-        wavel = data[:, 0]
-        wavel = wavel / (1 + z)
-        '''
-        # Make sure there is data around silicon:
-        if wavel.min() > 5800 or wavel.max() < 7000:
-            return None
-        idx1, idx2 = np.searchsorted(wavel, [3000, 8000])
+        return wave, flux, flux_err
 
-        wavel = wavel[idx1:idx2]
-        flux = data[idx1:idx2, 1]
-        flux /= flux.max()  # normalise intensity
-        '''
-        flux = data[:, 1]
-        flux /= np.nanmax(flux)
-        if np.any(np.isnan(flux)) or np.any(np.isnan(wavel)):
-            valid = np.isfinite(wavel) & np.isfinite(flux)
-            wavel = wavel[valid]
-            flux = flux[valid]
-        return wavel, flux
+    def _correct_redshift(self, z=None):
+        """Corrects for redshift of host galaxy."""
+        if z is not None and not isna(z):
+            self.wave /= (1 + z)
 
-    except Exception as e:
-        print(prev.message, e.message, filename)
-        raise e
+    def _normalize_flux(self):
+        """Normalizes the flux."""
+        max_flux = self.flux.max()
+        self.flux /= max_flux
 
+        if np.any(self.flux_err):
+            self.flux_err /= max_flux
 
-def _get_speed(lambda_m, lambda_m_err, lambda_rest):
-    # This is the absolute minimum, save it.
-    c = 299.792458
-    l_quot = lambda_m / lambda_rest
-    velocity = -c * (l_quot ** 2 - 1) / (l_quot ** 2 + 1)
-    velocity_err = c * 4 * l_quot / (l_quot ** 2 + 1) ** 2 * lambda_m_err / lambda_rest
-    return velocity, velocity_err
+    def _remove_gaps(self):
+        """Remove zero-flux values."""
+        self.wave = self.wave[self.flux != 0]
+        self.flux_err = self.flux_err[self.flux != 0]
+        self.flux = self.flux[self.flux != 0]
 
+    def _auto_prune(self):
+        """Removes data outside feature range (for less computation)."""
+        wav_min = min(self.lines[l][0] for l in self.lines) - 500
+        wav_max = max(self.lines[l][-1] for l in self.lines) + 500
 
-def compute_speed(lambda_0, x_values, y_values, m, plot):
-    # Just pick the strongest
-    min_pos = y_values.argmin()
-    if min_pos == 0 or min_pos == y_values.shape[0]:
-        # Feature not found
-        return np.nan, np.nan
+        self.flux = self.flux[(wav_min <= self.wave) & (self.wave <= wav_max)]
+        self.flux_err = self.flux_err[(wav_min <= self.wave) &
+                                      (self.wave <= wav_max)]
+        self.wave = self.wave[(wav_min <= self.wave) & (self.wave <= wav_max)]
 
-    lambda_m = x_values[min_pos]
+    def _get_gpy_model(self, x, y, y_err=None, x_pred=None, optimize_noise=False):
+        """Calculates GPy model for given data.
 
-    # To estimate the error, we sample possible spectra from the posterior and find the minima.
-    samples = m.posterior_samples_f(x_values[:, np.newaxis], 100).squeeze().argmin(axis=0)
+        Uses GPy to determine a Gaussian process model based on given training
+        data and optimized hyperparameters.  Returns mean and variance prediction
+        at input prediction values.
 
-    # Exclude points at either end
-    samples = samples[np.logical_and(samples != 0, samples != x_values.shape[0])]
-    if samples.size == 0:
-        return np.nan, np.nan
+        Args:
+            x (ndarray): Input training set.
+            y (ndarray): Output training set.
+            y_err (ndarray): Uncertainty in y.
+            x_pred (ndarray): Input prediction values. Defaults to 'x', so
+                              a change is suggested.
+            optimize_noise (ndarray): Optimize single-valued noise parameter.
 
-    lambda_m_samples = x_values[samples]
-    lambda_m_err = lambda_m_samples.std()
+        Returns:
+            mean (ndarray): Prediction of model at given input prediction values.
+            variance (ndarray): Variance of model at input pred. values.
+            m (GPy.models.GPRegression): Fitted GPy model.
+            kernel (GPy.kern): Kernel with optimized hyperparameters.
 
-    velocity, velocity_err = _get_speed(lambda_m, lambda_m_err, lambda_0)
+        """
+        kernel = GPy.kern.Matern32(1, lengthscale=300, variance=0.001)
 
-    if plot:
-        plt.axvline(lambda_m, color='k', linestyle='--')
+        model_uncertainty = False
+        if y_err is not None and np.any(y_err):
+            model_uncertainty = True
+        else:
+            optimize_noise = True
+            msg = ('No flux uncertainty detected - optimizing noise parameter.')
+            self.logger.info(msg)
 
-    return velocity, velocity_err
+        # Add flux errors as noise to kernel
+        kern = kernel
+        if model_uncertainty:
+            diag_vars = y_err**2 * np.eye(len(y_err))
+            kern_uncertainty = GPy.kern.Fixed(1, diag_vars)
+            kern = kernel + kern_uncertainty
+            self.logger.info('Flux error added to GPy kernel')
 
+        # Create model
+        m = GPy.models.GPRegression(x[:, np.newaxis], y[:, np.newaxis], kern)
+        m['Gaussian.noise.variance'][0] = 0.01
 
-def compute_speed_high_velocity(lambda_0, x_values, y_values, m, plot, method='MeanShift'):
-    min_pos = y_values.argmin()
-    if min_pos == 0 or min_pos == y_values.shape[0]:
-        # Feature not found
-        return [], [], np.nan, np.nan, [], []
+        self.logger.info('Created GP')
 
-    # To estimate the error, we sample possible spectra from the posterior and find the minima.
-    samples = m.posterior_samples_f(x_values[:, np.newaxis], 100).squeeze()
+        # Optimize model
+        if model_uncertainty:
+            m['.*fixed.variance'].constrain_fixed()
 
-    minima_samples = []
-    # Try increasingly more strict ranges in relative minima.
-    for order in range(20, 2, -1):
+        if not optimize_noise:
+            m.Gaussian_noise.fix(1e-6)
+
+        t0 = time.time()
+        m.optimize(optimizer='bfgs')
+
+        self.logger.info('Optimised in %.2f s.' % (time.time() - t0))
+        self.logger.info(m)
+
+        # Predict from model
+        if model_uncertainty:
+            # Use optimized hyperparameters with original kernel
+            kernel.lengthscale = kern.Mat32.lengthscale
+            kernel.variance = kern.Mat32.variance
+
+        t0 = time.time()
+
+        if x_pred is None:
+            x_pred = self.wave
+            self.logger.warning('Predicting at training points')
+
+        mean, var = m.predict(x_pred[:, np.newaxis], kern=kernel.copy())
+
+        self.logger.info('Predicted in %.2f s.\n' % (time.time() - t0))
+
+        return mean.squeeze(), var.squeeze(), m, kernel
+
+    def _filter_outliers(self, sigma_outliers, downsample_method):
+        """Attempt to remove sharp lines (teluric, cosmic rays...).
+
+        First applies a heavy downsampling and then discards points that are
+        further than 'sigma_outliers' standard deviations.
+
+        """
+        t0 = time.time()
+        x, y, y_err = downsample(self.wave, self.flux, self.flux_err,
+                                 binning=self.outlier_downsample_factor,
+                                 method=downsample_method)
+        self.logger.info('Downsampled in %.2f s.\n' % (time.time() - t0))
+
+        mean, var, _m, _k = self._get_gpy_model(x, y, y_err=None, x_pred=None,
+                                                optimize_noise=True)
+
+        sigma = np.sqrt(var)
+        valid = np.abs(self.flux - mean) < sigma_outliers * sigma
+
+        self.wave = self.wave[valid]
+        self.flux = self.flux[valid]
+        self.flux_err = self.flux_err[valid]
+
+        msg = 'Auto-removed {} data points'.format(len(valid) - valid.sum())
+        self.logger.info(msg)
+
+    def _downsample(self, downsampling, downsample_method):
+        """Handles downsampling."""
+        if downsampling == 1:
+            self.logger.info('Data was not downsampled (binning factor = 1)')
+            return
+
+        t0 = time.time()
+
+        n_flux_data = self.flux.shape[0]
+        sample_limit = 2400   # Depends on Python memory limits
+        if n_flux_data / downsampling > sample_limit:
+            downsampling = n_flux_data / sample_limit + 0.1
+            msg = ('Flux array is too large for memory. Downsampling '
+                   'factor increased to %.3f' % downsampling)
+            self.logger.warning(msg)
+        self.wave, self.flux, self.flux_err = \
+            downsample(self.wave, self.flux, self.flux_err,
+                       binning=downsampling, method=downsample_method)
+
+        t = time.time() - t0
+        msg = ('Downsampled from %i points with factor of %.2f in '
+               '%.2f s.\n' % (n_flux_data, downsampling, t))
+        self.logger.info(msg)
+
+    def get_speed(self, lam, lam_err, lam0):
+        c = 299.792458   # 10^3 km/s
+        l_quot = lam / lam0
+        velocity = -c * (l_quot**2 - 1) / (l_quot**2 + 1)
+        velocity_err = c * 4 * l_quot / (l_quot**2 + 1)**2 * lam_err / lam0
+        return velocity, velocity_err
+
+    def _compute_speed(self, lambda_0, wave_line, flux_line, plot):
+        # Just pick the strongest
+        min_index = flux_line.argmin()
+        if min_index == 0 or min_index == flux_line.shape[0] - 1:
+            # Feature not found
+            return np.nan, np.nan
+
+        lambda_m = wave_line[min_index]
+        if plot:
+            plt.axvline(lambda_m, color='k', linestyle='--')
+
+        # To estimate the error, we sample possible spectra from the posterior
+        # and find the minima.
+        samples = self.m.posterior_samples_f(wave_line[:, np.newaxis], 100,
+                                             kern=self.kernel.copy())
+        samples = samples.squeeze()
+        min_sample_indices = samples.argmin(axis=0)
+
+        # Exclude points at either end
+        min_sample_indices = min_sample_indices[1:wave_line.shape[0] - 1]
+        if min_sample_indices.size == 0:
+            return np.nan, np.nan
+
+        lambda_m_err = np.std(wave_line[min_sample_indices])
+
+        vel, vel_err = self.get_speed(lambda_m, lambda_m_err, lambda_0)
+        return vel, vel_err
+
+    def _compute_speed_hv(self, lambda_0, wave_line, flux_line, plot,
+                          method='MeanShift'):
+        # Pick the strongest
+        min_index = flux_line.argmin()
+        if min_index == 0 or min_index == flux_line.shape[0] - 1:
+            # Feature not found
+            return [], [], np.nan, np.nan, [], []
+
+        # To estimate the error, we sample possible spectra from the posterior
+        # and find the minima.
+        samples = self.m.posterior_samples_f(wave_line[:, np.newaxis], 100,
+                                             kern=self.kernel.copy())
+        samples = samples.squeeze()
+
+        minima_samples = []
         for i in range(samples.shape[1]):
-            positions = signal.argrelmin(samples[:, i], order=order)[0]
+            positions = signal.argrelmin(samples[:, i], order=10)[0]
             minima_samples.extend(positions)
 
-        if minima_samples:
-            minima_samples = np.array(minima_samples)[:, np.newaxis]
-            if method.lower() == 'dbscan':
-                labels = DBSCAN(eps=1).fit_predict(minima_samples)
-            elif method.lower() == 'meanshift':
-                labels = MeanShift(10).fit_predict(minima_samples)
-            else:
-                raise ValueError('Invalid method {}, valid are MeanShift and DBSCAN'.format(method))
-            break
-    else:
-        # There seems to be no minima at all!
-        labels = []
+        minima_samples = np.array(minima_samples)[:, np.newaxis]
 
-    velocity, velocity_err = compute_speed(lambda_0, x_values, y_values, m, plot=False)
-    lambdas = []
-    lambdas_err = []
-    vel_hv = []
-    vel_hv_err = []
+        method = method.lower()
+        methods = ('dbscan', 'meanshift')
+        assert method in methods, \
+            'Invalid method {}, valid are MeanShift and DBSCAN'.format(method)
 
-    for x in np.unique(labels):
-        if x == -1:
-            # This is the "noise" label in DBSCAN
-            continue
+        if method == 'dbscan':
+            labels = DBSCAN(eps=1).fit_predict(minima_samples)
+        elif method == 'meanshift':
+            labels = MeanShift(10).fit_predict(minima_samples)
 
-        matching = labels == x
-        if matching.sum() < 10:
-            continue  # This is just noise
+        lambdas = []
+        lambdas_err = []
+        vel_hv = []
+        vel_hv_err = []
 
-        min_pos = minima_samples[matching]
-        lambda_m = np.mean(x_values[min_pos])
-        lambda_m_err = np.std(x_values[min_pos])
+        for x in np.unique(labels):
+            if x == -1:
+                # This is the "noise" label in DBSCAN
+                continue
 
-        lambdas.append(lambda_m)
-        lambdas_err.append(lambda_m_err)
+            matching = labels == x
+            if matching.sum() < 5:
+                continue  # This is just noise
 
-        this_v, this_v_err = _get_speed(lambda_m, lambda_m_err, lambda_0)
-        vel_hv.append(this_v)
-        vel_hv_err.append(this_v_err)
+            min_index = minima_samples[matching]
+            lambda_m = np.mean(wave_line[min_index])
+            lambda_m_err = np.std(wave_line[min_index])
+
+            lambdas.append(lambda_m)
+            lambdas_err.append(lambda_m_err)
+
+            this_v, this_v_err = self.get_speed(lambda_m, lambda_m_err, lambda_0)
+            vel_hv.append(this_v)
+            vel_hv_err.append(this_v_err)
+
+            if plot:
+                plt.vlines(lambda_m, flux_line[min_index] - 0.2,
+                           flux_line[min_index] + 0.2, color='k', linestyle='--')
+        return lambdas, lambdas_err, vel_hv, vel_hv_err
+
+    def _pEW(self, cont_bounds):
+        """Calculates the pEW between two chosen points.
+
+        Args:
+            cont_bounds (ndarray): Bounds of feature for pEW calculation. Input as
+                                   np.array([x1, x2], [y1, y2])
+
+        Returns:
+            pEW (float): Pseudo-equivalent width.
+            pEW_err (float): pEW error.
+
+        """
+        # Define linear pseudo continuum with cont_bounds
+        cont = interpolate.interp1d(cont_bounds[0], cont_bounds[1],
+                                    bounds_error=False, fill_value=1)
+
+        # Get ratio of flux within pseudo continuum
+        nflux = self.flux / cont(self.wave)
+        pEW = 0
+        for i in range(len(self.wave)):
+            if cont_bounds[0, 0] < self.wave[i] < cont_bounds[0, 1]:
+                dwave = 0.5 * (self.wave[i + 1] - self.wave[i - 1])
+                pEW += dwave * (1 - nflux[i])
+
+        flux_err = np.abs(signal.cwt(self.flux, signal.ricker, [1])).mean()
+        pEW_stat_err = flux_err
+        pEW_cont_err = np.abs(cont_bounds[0, 0] - cont_bounds[0, 1]) * flux_err
+        pEW_err = math.hypot(pEW_stat_err, pEW_cont_err)
+
+        return pEW, pEW_err
+
+    def _line_depth(self, cont_bounds, wave_line, flux_line):
+        """Calculates RSi (Si 5800/Si 6150 depths) for feature
+
+        Args:
+            cont_bounds (ndarray): Bounds of feature for pEW calculation. Input as
+                                   np.array([x1, x2], [y1, y2])
+            feature_min (ndarray): [x, y] point of feature minimum
+
+        Returns:
+            depth (float): Depth of line from pseudo continuum
+
+        """
+        cont = interpolate.interp1d(cont_bounds[0], cont_bounds[1],
+                                    bounds_error=False, fill_value=1)
+
+        min_index = flux_line.argmin()
+        if min_index == 0 or min_index == flux_line.shape[0] - 1:
+            # Feature not found
+            return np.nan
+
+        lambda_m = wave_line[min_index]
+        depth = cont(lambda_m) - min(flux_line)
+
+        if depth < 0:
+            msg = 'Calculated unphysical line depth: %.3f' % depth
+            self.logger.warning(msg)
+
+        return depth
+
+    def process(self, sigma_outliers=None, downsample_method='weighted',
+                downsampling=None, downsampling_R=None, model_uncertainty=True,
+                optimize_noise=False, predict_size=2000, plot=False,
+                calc_pew_vel=True, high_velocity=False,
+                hv_clustering_method='MeanShift'):
+        """Runs the spectra-fitting and velocity/pEW calculations for this object.
+
+        Args:
+            sigma_outliers (float): Number of sigma from which to determine
+                                    spikes/outliers.
+            downsample_method (str): Type of downsampling (weighted, remove).
+            downsampling (float): Downsampling factor (>= 1).
+            downsampling_R (float): Resolution with which to automatically determine
+                                    downsampling factor. This has priority over
+                                    'downsampling' parameter.
+            model_uncertainty (bool): Include flux uncertainties in GPy model
+                                      inference.
+            optimize_noise (bool): Optimize single-valued noise parameter in GPy
+                                   model.
+            predict_size (int): Prediction input sample size for GPy model.
+            plot (bool): Create a plot of data, model, and spectral features.
+            calc_pew_vel (bool): Perform velocity/pEW calculations.
+            high_velocity (bool): Calculate based on high-velocity properties.
+            hv_clustering_method (str): Clustering method for high-velocity
+                                        calculations.
+
+        Returns:
+            self.pew (dict): pEWs for each feature.
+            self.pew_err (dict): pEW uncertainties for each feature.
+            self.vel (dict): Velocties for each feature.
+            self.vel_err (dict): Velocity uncertainties for each feature.
+            self.m (GPy.models.GPRegression): Fitted GPy model.
+
+        """
+        if not plot and not calc_pew_vel:
+            self.logger.info('No processes selected--ending.')
+            return
+
+        ds_methods = ('weighted', 'remove')
+        assert downsample_method in ds_methods, \
+            "'downsample_method' must be %s" % str(ds_methods)
+
+        assert isinstance(predict_size, int), "'predict_size' must be int-valued"
+
+        if optimize_noise and model_uncertainty:
+            msg = ('Having a non-zero noise with given uncertainty is not '
+                   'statistically legitimate.')
+            self.logger.warning(msg)
+
+        t00 = time.time()
+
+        if sigma_outliers is not None:
+            self._filter_outliers(sigma_outliers, downsample_method)
+            self._normalize_flux()
+
+        if downsampling_R is not None:
+            if downsampling is not None:
+                msg = ("'downsampling' parameter overridden by "
+                       "'downsampling_R' value")
+                self.logger.info(msg)
+            downsampling = get_downsample_factor(self.wave, downsampling_R)
+
+        if downsampling is not None:
+            self._downsample(downsampling, downsample_method)
+            # self._normalize_flux()
+
+        self.wave_pred = np.linspace(self.wave[0], self.wave[-1], predict_size)
+        y_err = np.zeros_like(self.flux_err)
+        if model_uncertainty:
+            y_err = self.flux_err
+        self.mean, self.variance, self.m, self.kernel = \
+            self._get_gpy_model(self.wave, self.flux, y_err=y_err,
+                                x_pred=self.wave_pred,
+                                optimize_noise=optimize_noise)
+        sigma = np.sqrt(self.variance)
 
         if plot:
-            plt.vlines(lambda_m, y_values[min_pos] - 0.2,
-                       y_values[min_pos] + 0.2, color='k', linestyle='--')
-    return lambdas, lambdas_err, velocity, velocity_err, vel_hv, vel_hv_err
+            plt.figure()
+            plt.xlabel(r"$\mathrm{Rest\ wavelength}\ (\AA)$", size=14)
+            plt.ylabel(r"$\mathrm{Normalised\ flux}$", size=14)
+            plt.ylim([0.1, 1.0])
 
+            plt.plot(self.wave, self.flux, color='k', alpha=0.5)
 
-def _filter_outliers(wavel, flux, sigma_outliers):
-    """
-    Attempt to remove sharp lines (teluric, cosmic rays...).
+            plt.plot(self.wave_pred, self.mean, color='red')
+            plt.fill_between(self.wave_pred, self.mean - sigma, self.mean + sigma,
+                             alpha=0.3, color='red')
 
-    First applies a heavy downsampling and then discards points that are
-    further than sigma_outliers standard deviations
-    """
+        if not calc_pew_vel:
+            return self.m
 
-    downsampling = 5
-    valid_vector = []
-    for i in range(downsampling):
-        x = wavel[i::downsampling, np.newaxis]
-        y = flux[i::downsampling, np.newaxis]
-        kernel = GPy.kern.Matern32(input_dim=1, lengthscale=300, variance=0.001)
-        m = GPy.models.GPRegression(x, y, kernel)
-        m.optimize()
+        t0 = time.time()
 
-        pred, var_ = m.predict(wavel[:, np.newaxis])
-        sigma = np.sqrt(var_.squeeze())
-        valid = np.abs(flux - pred.squeeze()) < sigma_outliers * sigma
-        valid_vector.append(valid.astype(np.int32))
+        for element in self.lines:
+            rest_wavelength, lo_1, lo_2, hi_1, hi_2 = self.lines[element]
 
-    valid_count = np.array(valid_vector).sum(axis=0)
-    valid = valid_count == downsampling
+            index_lo_1, index_lo_2 = np.searchsorted(self.wave_pred, (lo_1, lo_2))
+            index_hi_1, index_hi_2 = np.searchsorted(self.wave_pred, (hi_1, hi_2))
 
-    wavel = wavel[valid]
-    flux = flux[valid]
+            if index_lo_1 == index_lo_2 or index_hi_1 == index_hi_2:
+                # Feature outside of range of the spectrum
+                if high_velocity:
+                    self.lambda_hv[element] = []
+                    self.lambda_hv_err[element] = []
+                    self.vel_hv[element] = []
+                    self.vel_hv_err[element] = []
+                self.vel[element] = np.nan
+                self.vel_err[element] = np.nan
+                self.pew[element] = np.nan
+                self.pew_err[element] = np.nan
+                continue
 
-    print('Auto-removed {} data points'.format(len(valid) - valid.sum()))
+            max_index_lo = index_lo_1 + np.argmax(self.mean[index_lo_1: index_lo_2])
+            max_index_hi = index_hi_1 + np.argmax(self.mean[index_hi_1: index_hi_2])
 
-    return wavel, flux
+            wave_line = self.wave_pred[max_index_lo:max_index_hi]
+            mean_line = self.mean[max_index_lo:max_index_hi]
 
-
-def _filter_iq(x, y):
-    '''
-    Apply interquartile filtering of extreme outliers.
-
-    Keep everything within twice the IQR of the median.
-    '''
-    low, med, up = np.percentile(y, [25, 50, 75])
-    iq_range = up - low
-    lower = med - iq_range * 3
-    upper = med + iq_range * 3
-
-    valid = np.logical_and(y > lower, y < upper)
-
-    # A point is only valid if both neighbours are valid as well
-    valid = np.convolve(valid, [1, 1, 1], mode='same') >= 3
-
-    # Starting from each side, once we have a valid region spanning 300 Å, accept everything in between.
-    resolution_start = np.median(np.diff(x[:100]))
-    resolution_end = np.median(np.diff(x[-100:]))
-
-    n_start = int(round(300 * resolution_start))
-    n_end = int(round(300 * resolution_end))
-    N = valid.shape[0]
-
-    i0 = np.argmax(np.convolve(valid, n_start, mode='same'))
-    i1 = N - np.argmax(np.convolve(valid[::-1], n_end, mode='same'))
-    valid[i0:i1] = True
-
-    return x[valid], y[valid]
-
-
-def _de_smooth(wavel, flux):
-    indexes = np.concatenate(signal.argrelmin(flux) + signal.argrelmax(flux))
-    indexes.sort()
-    print('De-smoothing removed {} data points'.format(wavel.shape[0] - indexes.shape[0]))
-    wavel = wavel[indexes]
-    flux = flux[indexes]
-    return wavel, flux
-
-
-def process_spectra(filename, z, downsampling=None, plot=False, type='Ia',
-                    sigma_outliers=None, high_velocity=False, auto_prune=True,
-                    remove_gaps=True, hv_clustering_method='MeanShift', iq_filtering=True,
-                    desmooth=True):
-    t00 = time.time()
-    wavel, flux = load_spectra(filename, z)
-
-    if remove_gaps:
-        # Mask out regions where flux is 0
-        keep = flux != 0
-        wavel = wavel[keep]
-        flux = flux[keep]
-
-    if iq_filtering:
-        # Interquartile filtering:
-        wavel, flux = _filter_iq(wavel, flux)
-
-    if isinstance(type, str):
-        lines = LINES[type]
-    else:
-        lines = type
-
-    if auto_prune:
-        # Restrict to the possible range of the lines, with some leeway
-        wav_min = min(min(x for x in l if isinstance(x, (int, float))) for l in lines) - 500
-        wav_max = max(max(x for x in l if isinstance(x, (int, float))) for l in lines) + 500
-        i0, i1 = np.searchsorted(wavel, [wav_min, wav_max])
-
-        wavel = wavel[i0:i1]
-        flux = flux[i0:i1]
-        flux /= flux.max()  # If this raises an error, the spectrum is empty or outside of range
-
-    if desmooth:
-        wavel, flux = _de_smooth(wavel, flux)
-
-    if sigma_outliers is not None:
-        # Remove spikes
-        wavel, flux = _filter_outliers(wavel, flux, sigma_outliers)
-        # And re-normalise
-        flux /= flux.max()
-
-    if downsampling is not None:
-        wavel = wavel[::downsampling]
-        flux = flux[::downsampling]
-
-    x = wavel[:, np.newaxis]
-    y = flux[:, np.newaxis]
-
-    if plot:
-        plt.figure(filename)
-        plt.title(_sanitize(filename))
-        plt.xlabel(r"$\mathrm{Rest\ wavelength}\ (\AA)$", size=14)
-        plt.ylabel(r"$\mathrm{Normalised\ flux}$", size=14)
-        plt.plot(wavel, flux, color='k', alpha=0.5)
-
-    kernel = GPy.kern.Matern32(input_dim=1, lengthscale=300, variance=0.001)
-    # kernel = GPy.kern.RBF(input_dim=1, lengthscale=300, variance=0.01)
-    m = GPy.models.GPRegression(x, y, kernel)
-    m['Gaussian.noise.variance'][0] = 0.0027
-
-    print('Created GP')
-    t0 = time.time()
-    m.optimize()
-    print('Optimised in', time.time() - t0, 's.')
-    print(m)
-
-    mean, variance = m.predict(x)
-    conf = np.sqrt(variance)
-    if plot:
-        print('Plotting')
-        plt.plot(x, mean, color='red')
-        plt.fill_between(x[:, 0], mean[:, 0] - conf[:, 0],
-                         mean[:, 0] + conf[:, 0],
-                         alpha=0.3, color='red')
-
-    pew_results = dict()
-    pew_err_results = dict()
-    velocity_results = dict()
-    veolcity_err_results = dict()
-
-    lambda_hv_results = dict()
-    lambda_hv_err_results = dict()
-
-    vel_hv_results = dict()
-    vel_hv_err_results = dict()
-
-    t0_pew = time.time()
-    for line_data in lines:
-        element, rest_wavelength, low_1, high_1, low_2, high_2 = line_data
-
-        # For n:th feature:
-        cp_1 = np.searchsorted(x[:, 0], (low_1, high_1))
-        index_low, index_hi = cp_1
-        cp_2 = np.searchsorted(x[:, 0], (low_2, high_2))
-        index_low_2, index_hi_2 = cp_2
-
-        if index_low == index_hi or index_low_2 == index_hi_2:
-            # Feature outside of range of the spectrum
+            # Velocity calculation
+            plot_vel = True
             if high_velocity:
-                lambda_hv_results[element] = []
-                lambda_hv_err_results[element] = []
-                vel_hv_results[element] = []
-                vel_hv_err_results[element] = []
-            velocity_results[element] = np.nan
-            veolcity_err_results[element] = np.nan
-            pew_results[element] = np.nan
-            pew_err_results[element] = np.nan
-            continue
+                vel_out = self._compute_speed_hv(rest_wavelength, wave_line,
+                                                 mean_line, plot,
+                                                 hv_clustering_method)
 
-        max_point = index_low + np.argmax(mean[index_low: index_hi])
-        max_point_2 = index_low_2 + np.argmax(mean[index_low_2: index_hi_2])
+                l_hv, l_hv_err, v_hv, v_hv_err = vel_out
+                self.lambda_hv[element] = l_hv
+                self.lambda_hv_err[element] = l_hv_err
+                self.vel_hv[element] = v_hv
+                self.vel_hv_err[element] = v_hv_err
+                plot_vel = False
 
-        # Get the coordinates of the points:
-        cp1_x, cp1_y = x[max_point, 0], mean[max_point, 0]
-        cp2_x, cp2_y = x[max_point_2, 0], mean[max_point_2, 0]
+            v, v_err = self._compute_speed(rest_wavelength, wave_line, mean_line,
+                                           plot_vel)
 
-        # Speed calculation -------------------
+            self.vel[element] = v
+            self.vel_err[element] = v_err
+
+            if np.isnan(v):
+                # The feature was not detected, set the PeW to NaN.
+                self.pew[element] = np.nan
+                self.pew_err[element] = np.nan
+                continue
+
+            # PeW calculation
+            coords_w = (wave_line[0], wave_line[-1])
+            coords_f = (mean_line[0], mean_line[-1])
+            cont_coords = np.array((coords_w, coords_f))
+            pew, pew_err = self._pEW(cont_coords)
+            self.pew[element] = pew
+            self.pew_err[element] = pew_err
+
+            if plot:
+                plt.scatter(coords_w, coords_f, color='k', s=80)
+                _x_pew = np.linspace(*coords_w)
+                _dy = coords_f[1] - coords_f[0]
+                _dx = coords_w[1] - coords_w[0]
+                _m_pew = _dy / _dx
+                _y_pew_hi = _m_pew * _x_pew + coords_f[0] - _m_pew * coords_w[0]
+                _y_pew_low = self.m.predict(_x_pew[:, None],
+                                            kern=self.kernel.copy())[0][:, 0]
+                plt.fill_between(_x_pew, _y_pew_low, _y_pew_hi, color='y',
+                                 alpha=0.3)
+
+            # Line depth (for RSI)
+            depth = self._line_depth(cont_coords, wave_line, mean_line)
+            self.line_depth[element] = depth
+
+        msg = 'Velocity and pEW calculations took %.3f s.' % (time.time() - t0)
+        self.logger.info(msg)
+
+        try:
+            ld5800 = self.line_depth['Si II 5800A']
+            ld6150 = self.line_depth['Si II 6150A']
+            self.rsi = ld5800 / ld6150
+        except KeyError:
+            self.rsi = np.nan
+
+        self.logger.info('Total processing time: %.3f' % (time.time() - t00))
+        self.logger.info('Complete.')
+
+        self.logger.handlers = []   # Close log handlers between instantiations
+
         if high_velocity:
-            line_out = compute_speed_high_velocity(rest_wavelength, x[max_point:max_point_2, 0],
-                                                   mean[max_point:max_point_2, 0], m, plot, hv_clustering_method)
-
-            lambda_hv, lambda_hv_err, vel, vel_errors, vel_hv, vel_hv_err = line_out
-            lambda_hv_results[element] = lambda_hv
-            lambda_hv_err_results[element] = lambda_hv_err
-            vel_hv_results[element] = vel_hv
-            vel_hv_err_results[element] = vel_hv_err
+            outputs = self.pew, self.pew_err, self.vel, self.vel_err, \
+                self.lambda_hv, self.lambda_hv_err, self.vel_hv, \
+                self.vel_hv_err, self.m
         else:
-            vel, vel_errors = compute_speed(rest_wavelength, x[max_point:max_point_2, 0],
-                                            mean[max_point:max_point_2, 0], m,
-                                            plot)
-        velocity_results[element] = vel
-        veolcity_err_results[element] = vel_errors
+            outputs = self.pew, self.pew_err, self.vel, self.vel_err, self.m
 
-        if np.isnan(vel):
-            # The feature was not detected, set the PeW to NaN.
-            pew_results[element] = np.nan
-            pew_err_results[element] = np.nan
-            continue
-
-        # PeW calculation ---------------------
-        pew_computed, pew_err = pEW(wavel, flux,
-                                    np.array([[cp1_x, cp2_x], [cp1_y, cp2_y]]))
-        pew_results[element] = pew_computed
-        pew_err_results[element] = pew_err
-
-        # Plotting the pew regions ------------
-        if plot:
-            plt.scatter([cp1_x, cp2_x], [cp1_y, cp2_y], color='k', s=80)
-            _x_pew = np.linspace(cp1_x, cp2_x)
-            _m_pew = (cp2_y - cp1_y) / (cp2_x - cp1_x)
-            _y_pew_hi = _m_pew * _x_pew + cp1_y - _m_pew * cp1_x
-            _y_pew_low = m.predict(_x_pew[:, None])[0][:, 0]
-            plt.fill_between(_x_pew, _y_pew_low, _y_pew_hi, color='y',
-                             alpha=0.3)
-
-    print('pEWs computed in {:.2f} s.'.format(time.time() - t0_pew))
-    print(time.time() - t00, 's')
-    if high_velocity:
-        outputs = pew_results, pew_err_results, velocity_results, veolcity_err_results, lambda_hv_results, lambda_hv_err_results, vel_hv_results, vel_hv_err_results, m
-    else:
-        outputs = pew_results, pew_err_results, velocity_results, veolcity_err_results, m
-    return outputs
+        return outputs

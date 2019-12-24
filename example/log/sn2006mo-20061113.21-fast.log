@@ -1,0 +1,44 @@
+INFO: Loading data from sn2006mo/sn2006mo-20061113.21-fast.flm
+
+INFO: Downsampled in 0.06 s.
+
+INFO: No flux uncertainty detected - optimizing noise parameter.
+INFO: Created GP
+INFO: Optimised in 0.04 s.
+INFO: 
+Name : GP regression
+Objective : -193.80988832433718
+Number of Parameters : 3
+Number of Optimization Parameters : 3
+Updates : True
+Parameters:
+  [1mGP_regression.         [0;0m  |                   value  |  constraints  |  priors
+  [1mMat32.variance         [0;0m  |     0.20624366002268474  |      +ve      |        
+  [1mMat32.lengthscale      [0;0m  |        300.038818015755  |      +ve      |        
+  [1mGaussian_noise.variance[0;0m  |  0.00027787780381541624  |      +ve      |        
+WARNING: Predicting at training points
+INFO: Predicted in 0.02 s.
+
+INFO: Auto-removed 197 data points
+INFO: Downsampled from 2395 points with factor of 3.00 in 0.27 s.
+
+INFO: Flux error added to GPy kernel
+INFO: Created GP
+INFO: Optimised in 3.13 s.
+INFO: 
+Name : GP regression
+Objective : -1592.2844215475175
+Number of Parameters : 4
+Number of Optimization Parameters : 2
+Updates : True
+Parameters:
+  [1mGP_regression.         [0;0m  |               value  |  constraints  |  priors
+  [1msum.Mat32.variance     [0;0m  |   0.203286001152742  |      +ve      |        
+  [1msum.Mat32.lengthscale  [0;0m  |  163.85722831976017  |      +ve      |        
+  [1msum.fixed.variance     [0;0m  |                 1.0  |   +ve fixed   |        
+  [1mGaussian_noise.variance[0;0m  |               1e-06  |   +ve fixed   |        
+INFO: Predicted in 0.11 s.
+
+INFO: Velocity and pEW calculations took 0.310 s.
+INFO: Total processing time: 4.360
+INFO: Complete.
