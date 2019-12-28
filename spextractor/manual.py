@@ -1,7 +1,7 @@
 import matplotlib.pyplot as plt
 
 
-class ManualFit:
+class ManualRange:
 
     def __init__(self, w, f, default_lines, logger):
         self.w = w
@@ -26,13 +26,13 @@ class ManualFit:
         self.ax.set_title('Select feature to change', fontsize=16)
 
         for feature in self.def_lines:
-            self.ax.axvline(self.def_lines[feature][0], ls='--')
+            self.ax.axvline(self.def_lines[feature]['rest'], ls='--')
 
         self.cid = self.fig.canvas.mpl_connect('button_press_event',
                                                self.select_feature)
 
     def select_feature(self, event):
-        dists = ((abs(event.xdata - self.def_lines[feat][0]), feat)
+        dists = ((abs(event.xdata - self.def_lines[feat]['rest']), feat)
                  for feat in self.def_lines)
         closest_feature = min(dists)[1]
         print('Selected %s' % closest_feature)
@@ -73,11 +73,14 @@ class ManualFit:
     def end_bound_change(self):
         self.fig.canvas.mpl_disconnect(self.cid)
 
-        new_bounds = self.new_bounds
-        new_bounds.insert(0, self.def_lines[self.selected_feature][0])
-        self.def_lines[self.selected_feature] = tuple(new_bounds)
+        new_info = {}
+        new_info['rest'] = self.def_lines[self.selected_feature]['rest']
+        new_info['lo_range'] = tuple(self.new_bounds[0:2])
+        new_info['hi_range'] = tuple(self.new_bounds[2:4])
+
+        self.def_lines[self.selected_feature] = new_info
         self.logger.info('%s bounds changed to %s' % (self.selected_feature,
-                                                      str(tuple(new_bounds))))
+                                                      str(new_info)))
 
         self.selected_feature = None
         self.n_selections = 0

@@ -1,43 +1,18 @@
-from __future__ import division, print_function
-import time
-import math
-
 import numpy as np
-import matplotlib.pyplot as plt
 from pandas import isna
-
 from scipy import interpolate, signal
-
 from sklearn.cluster import DBSCAN, MeanShift
-
 import GPy
+
+import matplotlib.pyplot as plt
+
+import time
 
 from .io import load_spectra
 from .downsample import downsample, get_downsample_factor
 from .log import setup_log
-from .manual import ManualFit
-
-plt.ioff()
-
-# Element: rest wavelength, low_1, low_2, high_1, high_2
-LINES_Ia = {'Ca II H&K': (3945.12, 3450, 3800, 3800, 3950),
-            'Si 4000A': (4129.73, 3840, 3950, 4000, 4200),
-            'Mg II 4300A': (4481.2, 4000, 4250, 4300, 4700),
-            'Fe II 4800A': (5083.42, 4300, 4700, 4950, 5600),
-            'S W': (5536.24, 5050, 5300, 5500, 5750),
-            'Si II 5800A': (6007.7, 5400, 5700, 5800, 6000),
-            'Si II 6150A': (6355.1, 5800, 6100, 6200, 6600)
-            }
-
-LINES_Ib = {'Fe II': (5169, 4950, 5050, 5150, 5250),
-            'He I': (5875, 5350, 5450, 5850, 6000)
-            }
-
-LINES_Ic = {'Fe II': (5169, 4950, 5050, 5150, 5250),
-            'O I': (7773, 7250, 7350, 7750, 7950)
-            }
-
-Lines = dict(Ia=LINES_Ia, Ib=LINES_Ib, Ic=LINES_Ic)
+from .manual import ManualRange
+from .lines import get_lines
 
 
 class Spextractor:
@@ -58,13 +33,13 @@ class Spextractor:
             self._remove_gaps()
 
         if isinstance(SNtype, str):
-            self.lines = Lines[SNtype]
+            self.lines = get_lines(SNtype)
         else:
             self.lines = SNtype
 
         if manual_range:
             self.logger.info('Manually changing feature bounds.')
-            m = ManualFit(self.wave, self.flux, self.lines, self.logger)
+            m = ManualRange(self.wave, self.flux, self.lines, self.logger)
             self.lines = m.def_lines
 
         if auto_prune:
@@ -80,20 +55,21 @@ class Spextractor:
         self.m = None
         self.kernel = None
 
-        self.pew = dict()
-        self.pew_err = dict()
-        self.vel = dict()
-        self.vel_err = dict()
-        self.lambda_hv = dict()
-        self.lambda_hv_err = dict()
-        self.vel_hv = dict()
-        self.vel_hv_err = dict()
-        self.line_depth = dict()
+        self.pew = {}
+        self.pew_err = {}
+        self.vel = {}
+        self.vel_err = {}
+        self.lambda_hv = {}
+        self.lambda_hv_err = {}
+        self.vel_hv = {}
+        self.vel_hv_err = {}
+        self.line_depth = {}
 
         self.rsi = None
 
     def _setup_data(self, data):
-        """Reads data from file if needed."""
+        """Set up flux (with uncertainty) and wavelength data."""
+        # Read data from file if needed
         if isinstance(data, str):
             self.logger.info('Loading data from %s\n' % data)
             return load_spectra(data)
@@ -110,12 +86,12 @@ class Spextractor:
         return wave, flux, flux_err
 
     def _correct_redshift(self, z=None):
-        """Corrects for redshift of host galaxy."""
+        """Correct for redshift of host galaxy."""
         if z is not None and not isna(z):
             self.wave /= (1 + z)
 
     def _normalize_flux(self):
-        """Normalizes the flux."""
+        """Normalize the flux."""
         max_flux = self.flux.max()
         self.flux /= max_flux
 
@@ -129,9 +105,9 @@ class Spextractor:
         self.flux = self.flux[self.flux != 0]
 
     def _auto_prune(self):
-        """Removes data outside feature range (for less computation)."""
-        wav_min = min(self.lines[l][0] for l in self.lines) - 500
-        wav_max = max(self.lines[l][-1] for l in self.lines) + 500
+        """Remove data outside feature range (for less computation)."""
+        wav_min = min(self.lines[l]['lo_range'][0] for l in self.lines) - 500
+        wav_max = max(self.lines[l]['hi_range'][1] for l in self.lines) + 500
 
         self.flux = self.flux[(wav_min <= self.wave) & (self.wave <= wav_max)]
         self.flux_err = self.flux_err[(wav_min <= self.wave) &
@@ -139,7 +115,7 @@ class Spextractor:
         self.wave = self.wave[(wav_min <= self.wave) & (self.wave <= wav_max)]
 
     def _get_gpy_model(self, x, y, y_err=None, x_pred=None, optimize_noise=False):
-        """Calculates GPy model for given data.
+        """Calculate the GPy model for given data.
 
         Uses GPy to determine a Gaussian process model based on given training
         data and optimized hyperparameters.  Returns mean and variance prediction
@@ -242,7 +218,7 @@ class Spextractor:
         self.logger.info(msg)
 
     def _downsample(self, downsampling, downsample_method):
-        """Handles downsampling."""
+        """Handle downsampling."""
         if downsampling == 1:
             self.logger.info('Data was not downsampled (binning factor = 1)')
             return
@@ -273,7 +249,7 @@ class Spextractor:
         return velocity, velocity_err
 
     def _compute_speed(self, lambda_0, wave_line, flux_line, plot):
-        # Just pick the strongest
+        # Pick the strongest
         min_index = flux_line.argmin()
         if min_index == 0 or min_index == flux_line.shape[0] - 1:
             # Feature not found
@@ -362,7 +338,7 @@ class Spextractor:
         return lambdas, lambdas_err, vel_hv, vel_hv_err
 
     def _pEW(self, cont_bounds):
-        """Calculates the pEW between two chosen points.
+        """Calculate the pEW between two chosen points.
 
         Args:
             cont_bounds (ndarray): Bounds of feature for pEW calculation. Input as
@@ -388,12 +364,12 @@ class Spextractor:
         flux_err = np.abs(signal.cwt(self.flux, signal.ricker, [1])).mean()
         pEW_stat_err = flux_err
         pEW_cont_err = np.abs(cont_bounds[0, 0] - cont_bounds[0, 1]) * flux_err
-        pEW_err = math.hypot(pEW_stat_err, pEW_cont_err)
+        pEW_err = np.hypot(pEW_stat_err, pEW_cont_err)
 
         return pEW, pEW_err
 
     def _line_depth(self, cont_bounds, wave_line, flux_line):
-        """Calculates RSi (Si 5800/Si 6150 depths) for feature
+        """Calculate line depth for feature
 
         Args:
             cont_bounds (ndarray): Bounds of feature for pEW calculation. Input as
@@ -426,7 +402,7 @@ class Spextractor:
                 optimize_noise=False, predict_size=2000, plot=False,
                 calc_pew_vel=True, high_velocity=False,
                 hv_clustering_method='MeanShift'):
-        """Runs the spectra-fitting and velocity/pEW calculations for this object.
+        """Run the spectra-fitting and velocity/pEW calculations for this object.
 
         Args:
             sigma_outliers (float): Number of sigma from which to determine
@@ -515,10 +491,12 @@ class Spextractor:
         t0 = time.time()
 
         for element in self.lines:
-            rest_wavelength, lo_1, lo_2, hi_1, hi_2 = self.lines[element]
+            rest_wavelength = self.lines[element]['rest']
+            lo_range = self.lines[element]['lo_range']
+            hi_range = self.lines[element]['hi_range']
 
-            index_lo_1, index_lo_2 = np.searchsorted(self.wave_pred, (lo_1, lo_2))
-            index_hi_1, index_hi_2 = np.searchsorted(self.wave_pred, (hi_1, hi_2))
+            index_lo_1, index_lo_2 = np.searchsorted(self.wave_pred, lo_range)
+            index_hi_1, index_hi_2 = np.searchsorted(self.wave_pred, hi_range)
 
             if index_lo_1 == index_lo_2 or index_hi_1 == index_hi_2:
                 # Feature outside of range of the spectrum

@@ -135,12 +135,12 @@ def _downsample_average(wavelength, flux, flux_err, binning):
     return new_wavelength, new_flux, new_flux_err
 
 
-def get_downsample_factor(wavelength, R, round=False):
+def get_downsample_factor(wavelength, R, round_factor=False):
     interval = (wavelength[-1] - wavelength[0]) / (len(wavelength) - 1)
     lam = (wavelength[-1] + wavelength[0]) / 2
     dlam = lam / R
 
-    if round:
+    if round_factor:
         factor = int(np.around(dlam / interval))
     else:
         factor = dlam / interval
