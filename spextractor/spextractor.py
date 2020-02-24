@@ -226,7 +226,7 @@ class Spextractor:
         t0 = time.time()
 
         n_flux_data = self.flux.shape[0]
-        sample_limit = 2400   # Depends on Python memory limits
+        sample_limit = 2300   # Depends on Python memory limits
         if n_flux_data / downsampling > sample_limit:
             downsampling = n_flux_data / sample_limit + 0.1
             msg = ('Flux array is too large for memory. Downsampling '
@@ -560,7 +560,7 @@ class Spextractor:
                 _y_pew_hi = _m_pew * _x_pew + coords_f[0] - _m_pew * coords_w[0]
                 _y_pew_low = self.m.predict(_x_pew[:, None],
                                             kern=self.kernel.copy())[0][:, 0]
-                plt.fill_between(_x_pew, _y_pew_low, _y_pew_hi, color='y',
+                plt.fill_between(_x_pew, _y_pew_low, _y_pew_hi, color='#00a3cc',
                                  alpha=0.3)
 
             # Line depth (for RSI)
