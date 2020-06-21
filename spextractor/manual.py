@@ -22,8 +22,7 @@ class ManualRange:
 
     def init_plot(self):
         self.ax.plot(self.w, self.f)
-        self.fig.set_size_inches(12, 7)
-        self.ax.set_title('Select feature to change', fontsize=16)
+        self.ax.set_title('Select feature to change')
 
         for feature in self.def_lines:
             self.ax.axvline(self.def_lines[feature]['rest'], ls='--')
@@ -56,11 +55,11 @@ class ManualRange:
 
         c = '#ff7e21'
         if self.n_selections == 0:
-            self.ax.set_title('Select lower bound 2', fontsize=16)
+            self.ax.set_title('Select lower bound 2')
         if self.n_selections == 1:
-            self.ax.set_title('Select higher bound 1', fontsize=16)
+            self.ax.set_title('Select higher bound 1')
         if self.n_selections == 2:
-            self.ax.set_title('Select higher bound 2', fontsize=16)
+            self.ax.set_title('Select higher bound 2')
 
         self.ax.axvline(lam, c=c)
 

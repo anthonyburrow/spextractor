@@ -22,7 +22,7 @@ class Spextractor:
 
         log_fn = None
         if isinstance(data, str):
-            log_fn = '%s.log' % data.rsplit('.', 1)[0]
+            log_fn = f'{data.rsplit(".", 1)[0]:s}.log'
         self.logger = setup_log(log_fn)
 
         self.wave, self.flux, self.flux_err = self._setup_data(data)
@@ -44,7 +44,7 @@ class Spextractor:
 
         if auto_prune:
             self._auto_prune()
-            self._normalize_flux()   # If an error is raised, the spectrum is empty
+            self._normalize_flux()   # If an error is raised, empty spectrum
 
         # Instance variables
         self.outlier_downsample_factor = 20
@@ -64,6 +64,7 @@ class Spextractor:
         self.vel_hv = {}
         self.vel_hv_err = {}
         self.line_depth = {}
+        self.line_depth_err = {}
 
         self.rsi = None
 
@@ -71,7 +72,7 @@ class Spextractor:
         """Set up flux (with uncertainty) and wavelength data."""
         # Read data from file if needed
         if isinstance(data, str):
-            self.logger.info('Loading data from %s\n' % data)
+            self.logger.info(f'Loading data from {data:s}\n')
             return load_spectra(data)
 
         wave = data[:, 0]
@@ -114,12 +115,13 @@ class Spextractor:
                                       (self.wave <= wav_max)]
         self.wave = self.wave[(wav_min <= self.wave) & (self.wave <= wav_max)]
 
-    def _get_gpy_model(self, x, y, y_err=None, x_pred=None, optimize_noise=False):
+    def _get_gpy_model(self, x, y, y_err=None, x_pred=None,
+                       optimize_noise=False):
         """Calculate the GPy model for given data.
 
         Uses GPy to determine a Gaussian process model based on given training
-        data and optimized hyperparameters.  Returns mean and variance prediction
-        at input prediction values.
+        data and optimized hyperparameters.  Returns mean and variance
+        prediction at input prediction values.
 
         Args:
             x (ndarray): Input training set.
@@ -130,7 +132,8 @@ class Spextractor:
             optimize_noise (ndarray): Optimize single-valued noise parameter.
 
         Returns:
-            mean (ndarray): Prediction of model at given input prediction values.
+            mean (ndarray): Prediction of model at given input prediction
+                            values.
             variance (ndarray): Variance of model at input pred. values.
             m (GPy.models.GPRegression): Fitted GPy model.
             kernel (GPy.kern): Kernel with optimized hyperparameters.
@@ -170,7 +173,7 @@ class Spextractor:
         t0 = time.time()
         m.optimize(optimizer='bfgs')
 
-        self.logger.info('Optimised in %.2f s.' % (time.time() - t0))
+        self.logger.info(f'Optimised in {time.time() - t0:.2f} s.')
         self.logger.info(m)
 
         # Predict from model
@@ -187,7 +190,7 @@ class Spextractor:
 
         mean, var = m.predict(x_pred[:, np.newaxis], kern=kernel.copy())
 
-        self.logger.info('Predicted in %.2f s.\n' % (time.time() - t0))
+        self.logger.info(f'Predicted in {time.time() - t0:.2f} s.\n')
 
         return mean.squeeze(), var.squeeze(), m, kernel
 
@@ -202,7 +205,7 @@ class Spextractor:
         x, y, y_err = downsample(self.wave, self.flux, self.flux_err,
                                  binning=self.outlier_downsample_factor,
                                  method=downsample_method)
-        self.logger.info('Downsampled in %.2f s.\n' % (time.time() - t0))
+        self.logger.info(f'Downsampled in {time.time() - t0:.2f} s.\n')
 
         mean, var, _m, _k = self._get_gpy_model(x, y, y_err=None, x_pred=None,
                                                 optimize_noise=True)
@@ -214,7 +217,7 @@ class Spextractor:
         self.flux = self.flux[valid]
         self.flux_err = self.flux_err[valid]
 
-        msg = 'Auto-removed {} data points'.format(len(valid) - valid.sum())
+        msg = f'Auto-removed {len(valid) - valid.sum()} data points'
         self.logger.info(msg)
 
     def _downsample(self, downsampling, downsample_method):
@@ -229,16 +232,16 @@ class Spextractor:
         sample_limit = 2300   # Depends on Python memory limits
         if n_flux_data / downsampling > sample_limit:
             downsampling = n_flux_data / sample_limit + 0.1
-            msg = ('Flux array is too large for memory. Downsampling '
-                   'factor increased to %.3f' % downsampling)
+            msg = (f'Flux array is too large for memory. Downsampling '
+                   f'factor increased to {downsampling:.3f}')
             self.logger.warning(msg)
         self.wave, self.flux, self.flux_err = \
             downsample(self.wave, self.flux, self.flux_err,
                        binning=downsampling, method=downsample_method)
 
         t = time.time() - t0
-        msg = ('Downsampled from %i points with factor of %.2f in '
-               '%.2f s.\n' % (n_flux_data, downsampling, t))
+        msg = (f'Downsampled from {n_flux_data} points with factor of '
+               f'{downsampling:.2f} in {t:.2f} s.\n')
         self.logger.info(msg)
 
     def get_speed(self, lam, lam_err, lam0):
@@ -300,7 +303,7 @@ class Spextractor:
         method = method.lower()
         methods = ('dbscan', 'meanshift')
         assert method in methods, \
-            'Invalid method {}, valid are MeanShift and DBSCAN'.format(method)
+            f'Invalid method {method}, valid are MeanShift and DBSCAN'
 
         if method == 'dbscan':
             labels = DBSCAN(eps=1).fit_predict(minima_samples)
@@ -328,21 +331,23 @@ class Spextractor:
             lambdas.append(lambda_m)
             lambdas_err.append(lambda_m_err)
 
-            this_v, this_v_err = self.get_speed(lambda_m, lambda_m_err, lambda_0)
+            this_v, this_v_err = self.get_speed(lambda_m, lambda_m_err,
+                                                lambda_0)
             vel_hv.append(this_v)
             vel_hv_err.append(this_v_err)
 
             if plot:
                 plt.vlines(lambda_m, flux_line[min_index] - 0.2,
-                           flux_line[min_index] + 0.2, color='k', linestyle='--')
+                           flux_line[min_index] + 0.2, color='k',
+                           linestyle='--')
         return lambdas, lambdas_err, vel_hv, vel_hv_err
 
     def _pEW(self, cont_bounds):
         """Calculate the pEW between two chosen points.
 
         Args:
-            cont_bounds (ndarray): Bounds of feature for pEW calculation. Input as
-                                   np.array([x1, x2], [y1, y2])
+            cont_bounds (ndarray): Bounds of feature for pEW calculation. Input
+                                   as np.array([x1, x2], [y1, y2])
 
         Returns:
             pEW (float): Pseudo-equivalent width.
@@ -368,12 +373,12 @@ class Spextractor:
 
         return pEW, pEW_err
 
-    def _line_depth(self, cont_bounds, wave_line, flux_line):
+    def _line_depth(self, cont_bounds, wave_line, flux_line, mean_line_err):
         """Calculate line depth for feature
 
         Args:
-            cont_bounds (ndarray): Bounds of feature for pEW calculation. Input as
-                                   np.array([x1, x2], [y1, y2])
+            cont_bounds (ndarray): Bounds of feature for pEW calculation. Input
+                                   as np.array([x1, x2], [y1, y2])
             feature_min (ndarray): [x, y] point of feature minimum
 
         Returns:
@@ -390,32 +395,36 @@ class Spextractor:
 
         lambda_m = wave_line[min_index]
         depth = cont(lambda_m) - min(flux_line)
+        # the continuum error is already huge so rsi error will honestly be
+        # meaningless
+        depth_err = mean_line_err[min_index]
 
         if depth < 0:
-            msg = 'Calculated unphysical line depth: %.3f' % depth
+            msg = f'Calculated unphysical line depth: {depth:.3f}'
             self.logger.warning(msg)
 
-        return depth
+        return depth, depth_err
 
     def process(self, sigma_outliers=None, downsample_method='weighted',
                 downsampling=None, downsampling_R=None, model_uncertainty=True,
                 optimize_noise=False, predict_size=2000, plot=False,
                 calc_pew_vel=True, high_velocity=False,
                 hv_clustering_method='MeanShift'):
-        """Run the spectra-fitting and velocity/pEW calculations for this object.
+        """Run the spectra-fitting and velocity/pEW calculations for this
+           object.
 
         Args:
             sigma_outliers (float): Number of sigma from which to determine
                                     spikes/outliers.
             downsample_method (str): Type of downsampling (weighted, remove).
             downsampling (float): Downsampling factor (>= 1).
-            downsampling_R (float): Resolution with which to automatically determine
-                                    downsampling factor. This has priority over
-                                    'downsampling' parameter.
+            downsampling_R (float): Resolution with which to automatically
+                                    determine downsampling factor. This has
+                                    priority over 'downsampling' parameter.
             model_uncertainty (bool): Include flux uncertainties in GPy model
                                       inference.
-            optimize_noise (bool): Optimize single-valued noise parameter in GPy
-                                   model.
+            optimize_noise (bool): Optimize single-valued noise parameter in
+                                   GPy model.
             predict_size (int): Prediction input sample size for GPy model.
             plot (bool): Create a plot of data, model, and spectral features.
             calc_pew_vel (bool): Perform velocity/pEW calculations.
@@ -437,7 +446,7 @@ class Spextractor:
 
         ds_methods = ('weighted', 'remove')
         assert downsample_method in ds_methods, \
-            "'downsample_method' must be %s" % str(ds_methods)
+            f'"downsample_method" must be {ds_methods:s}'
 
         assert isinstance(predict_size, int), "'predict_size' must be int-valued"
 
@@ -477,13 +486,13 @@ class Spextractor:
             plt.figure()
             plt.xlabel(r"$\mathrm{Rest\ wavelength}\ (\AA)$", size=14)
             plt.ylabel(r"$\mathrm{Normalised\ flux}$", size=14)
-            plt.ylim([0.1, 1.0])
+            plt.ylim([0.0, 1.0])
 
             plt.plot(self.wave, self.flux, color='k', alpha=0.5)
 
             plt.plot(self.wave_pred, self.mean, color='red')
-            plt.fill_between(self.wave_pred, self.mean - sigma, self.mean + sigma,
-                             alpha=0.3, color='red')
+            plt.fill_between(self.wave_pred, self.mean - sigma,
+                             self.mean + sigma, alpha=0.3, color='red')
 
         if not calc_pew_vel:
             return self.m
@@ -516,6 +525,7 @@ class Spextractor:
 
             wave_line = self.wave_pred[max_index_lo:max_index_hi]
             mean_line = self.mean[max_index_lo:max_index_hi]
+            mean_line_err = np.sqrt(self.variance[max_index_lo:max_index_hi])
 
             # Velocity calculation
             plot_vel = True
@@ -531,8 +541,8 @@ class Spextractor:
                 self.vel_hv_err[element] = v_hv_err
                 plot_vel = False
 
-            v, v_err = self._compute_speed(rest_wavelength, wave_line, mean_line,
-                                           plot_vel)
+            v, v_err = self._compute_speed(rest_wavelength, wave_line,
+                                           mean_line, plot_vel)
 
             self.vel[element] = v
             self.vel_err[element] = v_err
@@ -564,20 +574,26 @@ class Spextractor:
                                  alpha=0.3)
 
             # Line depth (for RSI)
-            depth = self._line_depth(cont_coords, wave_line, mean_line)
+            depth, depth_err = self._line_depth(cont_coords, wave_line,
+                                                mean_line, mean_line_err)
             self.line_depth[element] = depth
+            self.line_depth_err[element] = depth_err
 
-        msg = 'Velocity and pEW calculations took %.3f s.' % (time.time() - t0)
+        msg = f'Velocity and pEW calculations took {time.time() - t0:.3f} s.'
         self.logger.info(msg)
 
         try:
             ld5800 = self.line_depth['Si II 5800A']
             ld6150 = self.line_depth['Si II 6150A']
+            ld5800_err = self.line_depth_err['Si II 5800A']
+            ld6150_err = self.line_depth_err['Si II 6150A']
             self.rsi = ld5800 / ld6150
+            self.rsi_err = np.sqrt(ld5800_err**2 + ld6150_err**2)
         except KeyError:
             self.rsi = np.nan
+            self.rsi_err = np.nan
 
-        self.logger.info('Total processing time: %.3f' % (time.time() - t00))
+        self.logger.info(f'Total processing time: {time.time() - t00:.3f}')
         self.logger.info('Complete.')
 
         self.logger.handlers = []   # Close log handlers between instantiations
