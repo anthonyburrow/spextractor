@@ -52,7 +52,7 @@ class Spextractor:
         self.wave_pred = None
         self.mean = None
         self.variance = None
-        self.m = None
+        self.model = None
         self.kernel = None
 
         self.pew = {}
@@ -264,8 +264,8 @@ class Spextractor:
 
         # To estimate the error, we sample possible spectra from the posterior
         # and find the minima.
-        samples = self.m.posterior_samples_f(wave_line[:, np.newaxis], 100,
-                                             kern=self.kernel.copy())
+        samples = self.model.posterior_samples_f(wave_line[:, np.newaxis], 100,
+                                                 kern=self.kernel.copy())
         samples = samples.squeeze()
         min_sample_indices = samples.argmin(axis=0)
 
@@ -289,8 +289,8 @@ class Spextractor:
 
         # To estimate the error, we sample possible spectra from the posterior
         # and find the minima.
-        samples = self.m.posterior_samples_f(wave_line[:, np.newaxis], 100,
-                                             kern=self.kernel.copy())
+        samples = self.model.posterior_samples_f(wave_line[:, np.newaxis], 100,
+                                                 kern=self.kernel.copy())
         samples = samples.squeeze()
 
         minima_samples = []
@@ -437,13 +437,9 @@ class Spextractor:
             self.pew_err (dict): pEW uncertainties for each feature.
             self.vel (dict): Velocties for each feature.
             self.vel_err (dict): Velocity uncertainties for each feature.
-            self.m (GPy.models.GPRegression): Fitted GPy model.
+            self.model (GPy.models.GPRegression): Fitted GPy model.
 
         """
-        if not plot and not calc_pew_vel:
-            self.logger.info('No processes selected--ending.')
-            return
-
         ds_methods = ('weighted', 'remove')
         assert downsample_method in ds_methods, \
             f'"downsample_method" must be {ds_methods:s}'
@@ -476,7 +472,7 @@ class Spextractor:
         y_err = np.zeros_like(self.flux_err)
         if model_uncertainty:
             y_err = self.flux_err
-        self.mean, self.variance, self.m, self.kernel = \
+        self.mean, self.variance, self.model, self.kernel = \
             self._get_gpy_model(self.wave, self.flux, y_err=y_err,
                                 x_pred=self.wave_pred,
                                 optimize_noise=optimize_noise)
@@ -495,7 +491,7 @@ class Spextractor:
                              self.mean + sigma, alpha=0.3, color='red')
 
         if not calc_pew_vel:
-            return self.m
+            return self.model
 
         t0 = time.time()
 
@@ -568,8 +564,8 @@ class Spextractor:
                 _dx = coords_w[1] - coords_w[0]
                 _m_pew = _dy / _dx
                 _y_pew_hi = _m_pew * _x_pew + coords_f[0] - _m_pew * coords_w[0]
-                _y_pew_low = self.m.predict(_x_pew[:, None],
-                                            kern=self.kernel.copy())[0][:, 0]
+                _y_pew_low = self.model.predict(_x_pew[:, None],
+                                                kern=self.kernel.copy())[0][:, 0]
                 plt.fill_between(_x_pew, _y_pew_low, _y_pew_hi, color='#00a3cc',
                                  alpha=0.3)
 
@@ -601,8 +597,8 @@ class Spextractor:
         if high_velocity:
             outputs = self.pew, self.pew_err, self.vel, self.vel_err, \
                 self.lambda_hv, self.lambda_hv_err, self.vel_hv, \
-                self.vel_hv_err, self.m
+                self.vel_hv_err, self.model
         else:
-            outputs = self.pew, self.pew_err, self.vel, self.vel_err, self.m
+            outputs = self.pew, self.pew_err, self.vel, self.vel_err, self.model
 
         return outputs
