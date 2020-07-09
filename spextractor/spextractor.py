@@ -188,11 +188,16 @@ class Spextractor:
             x_pred = self.wave
             self.logger.warning('Predicting at training points')
 
-        mean, var = m.predict(x_pred[:, np.newaxis], kern=kernel.copy())
+        mean, var = self._predict(x_pred, m, kernel.copy())
 
         self.logger.info(f'Predicted in {time.time() - t0:.2f} s.\n')
 
-        return mean.squeeze(), var.squeeze(), m, kernel
+        return mean, var, m, kernel
+
+    def _predict(self, x_pred, model, kernel):
+        mean, var = model.predict(x_pred[:, np.newaxis], kern=kernel)
+
+        return mean.squeeze(), var.squeeze()
 
     def _filter_outliers(self, sigma_outliers, downsample_method):
         """Attempt to remove sharp lines (teluric, cosmic rays...).
@@ -404,6 +409,19 @@ class Spextractor:
             self.logger.warning(msg)
 
         return depth, depth_err
+
+    def predict(self, x_pred):
+        """Use the created GPR model to make a prediction at any given points.
+
+        Args:
+            x_pred (numpy.ndarray): Test input set at which to predict.
+
+        Returns:
+            mean (numpy.ndarray): Mean values at the prediction points.
+            var (numpy.ndarray): Variance at the prediction points.
+
+        """
+        return self._predict(x_pred, self.model, self.kernel)
 
     def process(self, sigma_outliers=None, downsample_method='weighted',
                 downsampling=None, downsampling_R=None, model_uncertainty=True,
