@@ -1,44 +1,44 @@
 INFO: Loading data from sn2006mo/sn2006mo-20061113.21-fast.flm
 
-INFO: Downsampled in 0.08 s.
+INFO: Downsampled in 0.10 s.
 
 INFO: No flux uncertainty detected - optimizing noise parameter.
 INFO: Created GP
-INFO: Optimised in 0.17 s.
+INFO: Optimised in 0.16 s.
 INFO: 
 Name : GP regression
-Objective : -204.59752765725415
+Objective : -190.45043383132858
 Number of Parameters : 3
 Number of Optimization Parameters : 3
 Updates : True
 Parameters:
   [1mGP_regression.         [0;0m  |                   value  |  constraints  |  priors
-  [1mMat32.variance         [0;0m  |     0.20547411253432687  |      +ve      |        
-  [1mMat32.lengthscale      [0;0m  |       312.5115975331727  |      +ve      |        
-  [1mGaussian_noise.variance[0;0m  |  0.00027177814196501166  |      +ve      |        
+  [1mMat32.variance         [0;0m  |     0.21468798792511162  |      +ve      |        
+  [1mMat32.lengthscale      [0;0m  |      310.63115896639493  |      +ve      |        
+  [1mGaussian_noise.variance[0;0m  |  0.00026925579727035643  |      +ve      |        
 WARNING: Predicting at training points
 INFO: Predicted in 0.03 s.
 
-INFO: Auto-removed 265 data points
-INFO: Downsampled from 2414 points with factor of 3.00 in 0.35 s.
+INFO: Auto-removed 269 data points
+INFO: Downsampled from 2241 points with factor of 3.00 in 0.45 s.
 
 INFO: Flux error added to GPy kernel
 INFO: Created GP
-INFO: Optimised in 4.91 s.
+INFO: Optimised in 4.29 s.
 INFO: 
 Name : GP regression
-Objective : -1575.5129474678872
+Objective : -1536.6994867006506
 Number of Parameters : 4
 Number of Optimization Parameters : 2
 Updates : True
 Parameters:
-  [1mGP_regression.         [0;0m  |               value  |  constraints  |  priors
-  [1msum.Mat32.variance     [0;0m  |  0.1975297299267131  |      +ve      |        
-  [1msum.Mat32.lengthscale  [0;0m  |  163.22975560630366  |      +ve      |        
-  [1msum.fixed.variance     [0;0m  |                 1.0  |   +ve fixed   |        
-  [1mGaussian_noise.variance[0;0m  |               1e-06  |   +ve fixed   |        
-INFO: Predicted in 0.15 s.
+  [1mGP_regression.         [0;0m  |                value  |  constraints  |  priors
+  [1msum.Mat32.variance     [0;0m  |  0.21259333731556973  |      +ve      |        
+  [1msum.Mat32.lengthscale  [0;0m  |    180.6339226466907  |      +ve      |        
+  [1msum.fixed.variance     [0;0m  |                  1.0  |   +ve fixed   |        
+  [1mGaussian_noise.variance[0;0m  |                1e-06  |   +ve fixed   |        
+INFO: Predicted in 0.17 s.
 
-INFO: Velocity and pEW calculations took 0.477 s.
-INFO: Total processing time: 6.919
+INFO: Velocity and pEW calculations took 0.541 s.
+INFO: Total processing time: 6.726
 INFO: Complete.
