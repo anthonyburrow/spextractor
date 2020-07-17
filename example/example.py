@@ -17,10 +17,14 @@ def report(magnitude, error):
 fn = './spectra/sn2006mo-20061113.21-fast.flm'
 z = 0.0459
 spex = Spextractor(fn, z=z)
-spex.process(sigma_outliers=3, downsampling=3, model_uncertainty=True,
-             optimize_noise=False, plot=True)
+spex.create_model(sigma_outliers=3, downsampling=3, model_uncertainty=True,
+                  optimize_noise=False)
+spex.process(plot=True)
 
-plt.title('Ia_example')
+fig, ax = spex.plot
+
+ax.set_title('Ia_example')
+
 plt.tight_layout()
 plt.savefig('Ia_example.png', dpi=300)
 
