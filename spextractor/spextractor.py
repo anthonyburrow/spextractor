@@ -140,7 +140,7 @@ class Spextractor:
             Kernel with optimized hyperparameters.
 
         """
-        kernel = GPy.kern.Matern32(1, lengthscale=300, variance=0.001)
+        kernel = GPy.kern.Matern32(1, lengthscale=300., variance=0.001)
 
         model_uncertainty = False
         if y_err is not None and np.any(y_err):
@@ -356,7 +356,7 @@ class Spextractor:
         frac_flux = self.flux[mask] / continuum(self.wave[mask])
         lower_wave = self.wave[:-1][mask[1:]]
         upper_wave = self.wave[1:][mask[:-1]]
-        pEW = np.sum(0.5 * (upper_wave - lower_wave) * (1 - frac_flux))
+        pEW = 0.5 * np.sum((upper_wave - lower_wave) * (1 - frac_flux))
 
         pEW_stat_err = np.abs(signal.cwt(self.flux, signal.ricker, [1])).mean()
         pEW_cont_err = (wave_range[1] - wave_range[0]) * pEW_stat_err
