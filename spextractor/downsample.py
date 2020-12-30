@@ -1,4 +1,5 @@
 import numpy as np
+from .util.interpolate import interp_linear
 
 
 def downsample(wavelength, flux, flux_err, binning=1, method='weighted'):
@@ -26,111 +27,56 @@ def _downsample_remove(wavelength, flux, flux_err, binning):
     return new_wavelength, new_flux, new_flux_err
 
 
-def _downsample_average(wavelength, flux, flux_err, binning):
-    # Determine endpoints to bins
-    n_points = wavelength.shape[0]
-    new_n_points = int(np.around(n_points / binning))
-    endpoints = np.linspace(wavelength[0], wavelength[-1], new_n_points + 1)
-    n_bins = new_n_points
+def _downsample_average(wave, flux, flux_err, binning):
+    n_points = wave.shape[0]
+    n_bins = int(np.around(n_points / binning))
+    endpoint_wave, bin_size = np.linspace(wave[0], wave[-1], n_bins + 1,
+                                          retstep=True)
 
-    # Generate new wavelength array
-    new_wavelength = []
-    for i in range(n_bins):
-        avg_wavelength = 0.5 * (endpoints[i] + endpoints[i + 1])
-        new_wavelength.append(avg_wavelength)
+    new_wavelength = 0.5 * (endpoint_wave[:-1] + endpoint_wave[1:])
 
-    # Generate new flux array
+    endpoint_flux, endpoint_flux_var = \
+        interp_linear(endpoint_wave, wave, flux, flux_err)
+
     new_flux = []
-    new_flux_err = []
-
-    f_slope = 0
-    last_point = None
-    next_point = None
+    new_flux_var = []
     for i in range(n_bins):
-        # Get points between endpoints
-        to_bin = []
-        for j in range(wavelength.shape[0]):
-            if endpoints[i] <= wavelength[j] < endpoints[i + 1]:
-                to_bin.append((wavelength[j], flux[j], flux_err[j]))
-                continue
-            if not to_bin:
-                continue
-            next_point = (wavelength[j], flux[j], flux_err[j])
-            break
+        # Get values for individual bin
+        bin_mask = (endpoint_wave[i] < wave) & (wave < endpoint_wave[i + 1])
 
-        if not to_bin:
-            new_flux.append(np.nan)
-            new_flux_err.append(np.nan)
-            continue
+        bin_wave = np.zeros(bin_mask.sum() + 2)
+        bin_flux = np.zeros_like(bin_wave)
+        bin_flux_var = np.zeros_like(bin_wave)
 
-        F_integral = 0
-        dF_integral = 0
+        bin_wave[[0, -1]] = endpoint_wave[i:i + 2]
+        bin_flux[[0, -1]] = endpoint_flux[i:i + 2]
+        bin_flux_var[[0, -1]] = endpoint_flux_var[i:i + 2]
 
-        # Endpoint to first point of bin
-        if not i == 0:
-            dlam_total = to_bin[0][0] - last_point[0]
-            f_slope = (to_bin[0][1] - last_point[1]) / dlam_total
+        bin_wave[1:-1] = wave[bin_mask]
+        bin_flux[1:-1] = flux[bin_mask]
+        bin_flux_var[1:-1] = flux_err[bin_mask]**2
 
-            lam1 = endpoints[i]
-            lam2 = to_bin[0][0]
-            dlam = lam2 - lam1
-            f2 = to_bin[0][1]
-            f1 = f2 - f_slope * dlam
+        # Get flux/flux error associated with integrated flux
+        dlam = bin_wave[1:] - bin_wave[:-1]
+        lamF = bin_wave * bin_flux
+        lamF_var = bin_wave**2 * bin_flux_var
 
-            fe2 = to_bin[0][2]
-            fe0 = last_point[2]
-            lam_ratio = dlam / dlam_total
-            fe1_sq = (fe2 * (1 - lam_ratio))**2 + (fe0 * lam_ratio)**2
+        flux_terms = dlam * (lamF[:-1] + lamF[1:])
+        int_flux = 0.5 * flux_terms.sum()
+        new_flux.append(int_flux)
 
-            F_integral += (f1 * lam1 + f2 * lam2) * dlam
-            dF_integral += dlam**2 * (lam1**2 * fe1_sq + lam2**2 * fe2**2)
+        var_terms = dlam**2 * (lamF_var[:-1] + lamF_var[1:])
+        int_var = 0.25 * var_terms.sum()
+        new_flux_var.append(int_var)
 
-        # First point to last point
-        for j in range(len(to_bin) - 1):
-            lam0, f0, fe0 = to_bin[j]
-            lam1, f1, fe1 = to_bin[j + 1]
-            dlam = lam1 - lam0
+    new_flux = np.array(new_flux)
+    new_flux_var = np.array(new_flux_var)
 
-            F_integral += (f0 * lam0 + f1 * lam1) * dlam
-            dF_integral += dlam**2 * (lam0**2 * fe0**2 + lam1**2 * fe1**2)
+    lam_dlam = new_wavelength * bin_size
+    new_flux /= lam_dlam
+    new_flux_err = np.sqrt(new_flux_var) / lam_dlam
 
-        # Last point of bin to endpoint
-        if not i == n_bins - 1:
-            last_point = to_bin[-1]
-
-            dlam_total = next_point[0] - last_point[0]
-            f_slope = (next_point[1] - last_point[1]) / dlam_total
-
-            lam0 = last_point[0]
-            lam1 = endpoints[i + 1]
-            dlam = lam1 - lam0
-            f0 = last_point[1]
-            f1 = f0 + f_slope * dlam
-
-            fe0 = last_point[2]
-            fe2 = next_point[2]
-            lam_ratio = dlam / dlam_total
-            fe1_sq = (fe0 * (1 - lam_ratio))**2 + (fe2 * lam_ratio)**2
-
-            F_integral += (f0 * lam0 + f1 * lam1) * dlam
-            dF_integral += dlam**2 * (lam0**2 * fe0**2 + lam1**2 * fe1_sq)
-
-        # Solve for flux and flux error values
-        lam_dlam = new_wavelength[i] * (endpoints[i + 1] - endpoints[i])
-
-        bin_flux = 0.5 * F_integral / lam_dlam
-        new_flux.append(bin_flux)
-
-        bin_flux_err = 0.5 * np.sqrt(dF_integral) / lam_dlam
-        new_flux_err.append(bin_flux_err)
-
-    new_wavelength_flux = [(x, y, ye) for x, y, ye in
-                           zip(new_wavelength, new_flux, new_flux_err)
-                           if y is not np.nan]
-
-    new_wavelength = np.array([x[0] for x in new_wavelength_flux])
-    new_flux = np.array([x[1] for x in new_wavelength_flux])
-    new_flux_err = np.array([x[2] for x in new_wavelength_flux])
+    # Filter for flux = np.nan?
 
     return new_wavelength, new_flux, new_flux_err
 
