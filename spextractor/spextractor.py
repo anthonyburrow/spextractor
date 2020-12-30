@@ -1,21 +1,21 @@
 import numpy as np
-from pandas import isna
-from scipy import interpolate, signal
-from sklearn.cluster import DBSCAN, MeanShift
-import GPy
 
 import time
 
-from .io import load_spectra
-from .downsample import downsample, get_downsample_factor
-from .log import setup_log
-from .manual import ManualRange
-from .lines import get_lines
+from .util.io import load_spectra
+from .util.log import setup_log
+from .util.manual import ManualRange
+from .physics.lines import get_lines
+from .physics import doppler
+from .physics import feature
+from .physics.downsample import downsample
+from .math import interpolate
+from .math import gpr
 
 
 class Spextractor:
 
-    def __init__(self, data, z=None, SNtype='Ia', manual_range=False,
+    def __init__(self, data, z=None, sn_type='Ia', manual_range=False,
                  remove_zeroes=True, auto_prune=True, prune_excess=250,
                  outlier_downsampling=20):
 
@@ -25,16 +25,16 @@ class Spextractor:
         self._logger = setup_log(log_fn)
 
         self.wave, self.flux, self.flux_err = self._setup_data(data)
-        self._correct_redshift(z)
+        self.wave = doppler.deredshift(self.wave, z=z)
         self._normalize_flux()
 
         if remove_zeroes:
             self._remove_zeroes()
 
-        if isinstance(SNtype, str):
-            self._lines = get_lines(SNtype)
+        if isinstance(sn_type, str):
+            self._lines = get_lines(sn_type)
         else:
-            self._lines = SNtype
+            self._lines = sn_type
 
         if manual_range:
             self._logger.info('Manually changing feature bounds...')
@@ -76,15 +76,10 @@ class Spextractor:
             flux_err = data[:, 2]
         except IndexError:
             msg = 'No flux uncertainties found while reading file.'
-            self._logger.warning(msg)
+            self._logger.info(msg)
             flux_err = np.zeros(len(flux))
 
         return wave, flux, flux_err
-
-    def _correct_redshift(self, z=None):
-        """Correct for redshift of host galaxy."""
-        if z is not None and not isna(z):
-            self.wave /= (1 + z)
 
     def _normalize_flux(self):
         """Normalize the flux."""
@@ -115,85 +110,6 @@ class Spextractor:
         self.flux_err = self.flux_err[mask]
         self.wave = self.wave[mask]
 
-    def _get_gpr_model(self, x, y, y_err=None, optimize_noise=False):
-        """Calculate the GPy model for given data.
-
-        Uses GPy to determine a Gaussian process model based on given training
-        data and optimized hyperparameters.
-
-        Parameters
-        ----------
-        x : numpy.ndarray
-            Input training set.
-        y : numpy.ndarray
-            Output training set.
-        y_err : numpy.ndarray
-            Uncertainty in observed output `y`.
-        optimize_noise : numpy.ndarray
-            Optimize single-valued noise parameter.
-
-        Returns
-        -------
-        m : GPy.models.GPRegression
-            Fitted GPy model.
-        kernel : GPy.kern
-            Kernel with optimized hyperparameters.
-
-        """
-        kernel = GPy.kern.Matern32(1, lengthscale=300., variance=0.001)
-
-        model_uncertainty = False
-        if y_err is not None and np.any(y_err):
-            model_uncertainty = True
-        else:
-            optimize_noise = True
-            msg = ('No flux uncertainty detected - optimizing noise parameter.')
-            self._logger.info(msg)
-
-        # Add flux errors as noise to kernel
-        kern = kernel
-        if model_uncertainty:
-            diag_vars = y_err**2 * np.eye(len(y_err))
-            kern_uncertainty = GPy.kern.Fixed(1, diag_vars)
-            kern = kernel + kern_uncertainty
-            self._logger.info('Flux error added to GPy kernel')
-
-        # Create model
-        m = GPy.models.GPRegression(x[:, np.newaxis], y[:, np.newaxis], kern)
-        m['Gaussian.noise.variance'][0] = 0.01
-
-        self._logger.info('Created GP')
-
-        # Optimize model
-        if model_uncertainty:
-            m['.*fixed.variance'].constrain_fixed()
-
-        if not optimize_noise:
-            m.Gaussian_noise.fix(1e-6)
-
-        t0 = time.time()
-        m.optimize(optimizer='bfgs')
-
-        self._logger.info(f'Optimised in {time.time() - t0:.2f} s.')
-        self._logger.info(m)
-
-        if model_uncertainty:
-            # Use optimized hyperparameters with original kernel
-            kernel.lengthscale = kern.Mat32.lengthscale
-            kernel.variance = kern.Mat32.variance
-
-        return m, kernel
-
-    def _predict(self, x_pred, model, kernel, verbose=True):
-        t0 = time.time()
-
-        mean, var = model.predict(x_pred[:, np.newaxis], kern=kernel.copy())
-
-        if verbose:
-            self._logger.info(f'Predicted in {time.time() - t0:.2f} s.\n')
-
-        return mean.squeeze(), var.squeeze()
-
     def _filter_outliers(self, sigma_outliers, downsample_method):
         """Attempt to remove sharp lines (teluric, cosmic rays...).
 
@@ -201,14 +117,13 @@ class Spextractor:
         further than 'sigma_outliers' standard deviations.
 
         """
-        t0 = time.time()
-        x, y, y_err = downsample(self.wave, self.flux, self.flux_err,
-                                 binning=self._outlier_ds_factor,
-                                 method=downsample_method)
-        self._logger.info(f'Downsampled in {time.time() - t0:.2f} s.\n')
+        x, y, _ = downsample(self.wave, self.flux, self.flux_err,
+                             binning=self._outlier_ds_factor,
+                             method=downsample_method)
 
-        _m, _k = self._get_gpr_model(x, y, y_err=None, optimize_noise=True)
-        mean, var = self._predict(self.wave, _m, _k)
+        model, kernel = gpr.model(x, y, y_err=None, optimize_noise=True,
+                                  logger=self._logger)
+        mean, var = gpr.predict(self.wave, model, kernel)
 
         sigma = np.sqrt(var)
         valid = np.abs(self.flux - mean) < sigma_outliers * sigma
@@ -217,18 +132,13 @@ class Spextractor:
         self.flux = self.flux[valid]
         self.flux_err = self.flux_err[valid]
 
-        msg = f'Auto-removed {len(valid) - valid.sum()} data points'
+        msg = (f'Removed {len(valid) - valid.sum()} outliers outside a '
+               f'{sigma_outliers}-sigma threshold.')
         self._logger.info(msg)
 
     def _downsample(self, downsampling, downsample_method):
         """Handle downsampling."""
-        if downsampling == 1:
-            self._logger.info('Data was not downsampled (binning factor = 1)')
-            return
-
-        t0 = time.time()
-
-        n_flux_data = self.flux.shape[0]
+        n_flux_data = len(self.flux)
         sample_limit = 2300   # Depends on Python memory limits
         if n_flux_data / downsampling > sample_limit:
             downsampling = n_flux_data / sample_limit + 0.1
@@ -239,177 +149,9 @@ class Spextractor:
             downsample(self.wave, self.flux, self.flux_err,
                        binning=downsampling, method=downsample_method)
 
-        t = time.time() - t0
         msg = (f'Downsampled from {n_flux_data} points with factor of '
-               f'{downsampling:.2f} in {t:.2f} s.\n')
+               f'{downsampling:.2f}.\n')
         self._logger.info(msg)
-
-    def _get_velocity(self, lam, lam_err, lam0):
-        c = 299.792458   # 10^3 km/s
-        l_quot = lam / lam0
-        velocity = -c * (l_quot**2 - 1) / (l_quot**2 + 1)
-        velocity_err = c * 4 * l_quot / (l_quot**2 + 1)**2 * lam_err / lam0
-        return velocity, velocity_err
-
-    def _compute_speed(self, lambda_0, feat_wave, feat_mean, plot):
-        min_index = feat_mean.argmin()
-        if min_index == 0 or min_index == feat_mean.shape[0] - 1:
-            # Feature not found
-            return np.nan, np.nan
-
-        lambda_m = feat_wave[min_index]
-
-        # To estimate the error, we sample possible spectra from the posterior
-        # and find the minima.
-        samples = self._model.posterior_samples_f(feat_wave[:, np.newaxis], 100,
-                                                  kern=self.kernel.copy())
-        samples = samples.squeeze()
-        min_sample_indices = samples.argmin(axis=0)
-
-        # Exclude points at either end
-        min_sample_indices = min_sample_indices[1:feat_wave.shape[0] - 1]
-        if min_sample_indices.size == 0:
-            return np.nan, np.nan
-
-        lambda_m_err = np.std(feat_wave[min_sample_indices])
-
-        vel, vel_err = self._get_velocity(lambda_m, lambda_m_err, lambda_0)
-
-        if plot:
-            self._ax.axvline(lambda_m, ymax=min(feat_mean), color='k',
-                             linestyle='--')
-
-        return vel, vel_err
-
-    def _compute_speed_hv(self, lambda_0, feat_wave, feat_mean, plot,
-                          method='MeanShift'):
-        min_index = feat_mean.argmin()
-        if min_index == 0 or min_index == feat_mean.shape[0] - 1:
-            # Feature not found
-            return [], [], np.nan, np.nan, [], []
-
-        # To estimate the error, we sample possible spectra from the posterior
-        # and find the minima.
-        samples = self._model.posterior_samples_f(feat_wave[:, np.newaxis], 100,
-                                                  kern=self.kernel.copy())
-        samples = samples.squeeze()
-
-        minima_samples = []
-        for i in range(samples.shape[1]):
-            positions = signal.argrelmin(samples[:, i], order=10)[0]
-            minima_samples.extend(positions)
-
-        minima_samples = np.array(minima_samples)[:, np.newaxis]
-
-        method = method.lower()
-        methods = ('dbscan', 'meanshift')
-        assert method in methods, \
-            f'Invalid method {method}, valid are MeanShift and DBSCAN'
-
-        if method == 'dbscan':
-            labels = DBSCAN(eps=1).fit_predict(minima_samples)
-        elif method == 'meanshift':
-            labels = MeanShift(10).fit_predict(minima_samples)
-
-        lambdas = []
-        lambdas_err = []
-        vel_hv = []
-        vel_hv_err = []
-
-        for x in np.unique(labels):
-            if x == -1:
-                # This is the "noise" label in DBSCAN
-                continue
-
-            matching = labels == x
-            if matching.sum() < 5:
-                continue  # This is just noise
-
-            min_index = minima_samples[matching]
-            lambda_m = np.mean(feat_wave[min_index])
-            lambda_m_err = np.std(feat_wave[min_index])
-
-            lambdas.append(lambda_m)
-            lambdas_err.append(lambda_m_err)
-
-            this_v, this_v_err = self._get_velocity(lambda_m, lambda_m_err,
-                                                    lambda_0)
-            vel_hv.append(this_v)
-            vel_hv_err.append(this_v_err)
-
-            if plot:
-                self._ax.vlines(lambda_m, feat_mean[min_index] - 0.2,
-                                feat_mean[min_index] + 0.2, color='k',
-                                linestyle='--')
-        return lambdas, lambdas_err, vel_hv, vel_hv_err
-
-    def _compute_pEW(self, feat_wave, feat_mean, plot):
-        wave_range = np.array([feat_wave[0], feat_wave[-1]])
-        flux_range = np.array([feat_mean[0], feat_mean[-1]])
-
-        # Define linear pseudo-continuum with bounds
-        continuum = interpolate.interp1d(wave_range, flux_range,
-                                         bounds_error=False, fill_value=1)
-
-        # Integrate the fractional flux
-        mask = (wave_range[0] < self.wave) & (self.wave < wave_range[1])
-        frac_flux = self.flux[mask] / continuum(self.wave[mask])
-        lower_wave = self.wave[:-1][mask[1:]]
-        upper_wave = self.wave[1:][mask[:-1]]
-        pEW = 0.5 * np.sum((upper_wave - lower_wave) * (1 - frac_flux))
-
-        pEW_stat_err = np.abs(signal.cwt(self.flux, signal.ricker, [1])).mean()
-        pEW_cont_err = (wave_range[1] - wave_range[0]) * pEW_stat_err
-        pEW_err = np.hypot(pEW_stat_err, pEW_cont_err)
-
-        if plot:
-            feat_x = np.linspace(*wave_range)
-            cont_dy = flux_range[1] - flux_range[0]
-            cont_dx = wave_range[1] - wave_range[0]
-            cont_m = cont_dy / cont_dx
-            cont_y_hi = cont_m * (feat_x - wave_range[0]) + flux_range[0]
-            cont_y_lo, _ = self.predict(feat_x, verbose=False)
-
-            self._ax.scatter(wave_range, flux_range, color='k', s=30)
-            self._ax.fill_between(feat_x, cont_y_lo, cont_y_hi,
-                                  color='#00a3cc', alpha=0.3)
-
-        return pEW, pEW_err
-
-    def _compute_depth(self, feat_wave, feat_mean, feat_mean_err):
-        """Calculate line depth for feature
-
-        Args:
-            cont_bounds (ndarray): Bounds of feature for pEW calculation. Input
-                                   as np.array([x1, x2], [y1, y2])
-            feature_min (ndarray): [x, y] point of feature minimum
-
-        Returns:
-            depth (float): Depth of line from pseudo continuum
-
-        """
-        wave_range = np.array([feat_wave[0], feat_wave[-1]])
-        flux_range = np.array([feat_mean[0], feat_mean[-1]])
-
-        # Define linear pseudo-continuum with bounds
-        continuum = interpolate.interp1d(wave_range, flux_range,
-                                         bounds_error=False, fill_value=1)
-
-        min_index = feat_mean.argmin()
-        if min_index == 0 or min_index == feat_mean.shape[0] - 1:
-            # Feature not found
-            return np.nan
-
-        lambda_m = feat_wave[min_index]
-        depth = continuum(lambda_m) - feat_mean[min_index]
-        # the continuum error is already huge so rsi error is meaningless
-        depth_err = feat_mean_err[min_index]
-
-        if depth < 0:
-            msg = f'Calculated unphysical line depth: {depth:.3f}'
-            self._logger.warning(msg)
-
-        return depth, depth_err
 
     def _setup_plot(self, gpr_w, gpr_f, gpr_fe):
         if self._fig is not None:
@@ -423,12 +165,17 @@ class Spextractor:
         self._ax.set_ylabel(r'$\mathrm{Normalized\ flux}$', size=14)
         self._ax.set_ylim(0, 1)
 
-        self._ax.plot(self.wave, self.flux, color='k', alpha=0.7)
-        self._ax.plot(gpr_w, gpr_f, color='red')
-        self._ax.fill_between(gpr_w, gpr_f - gpr_fe, gpr_f + gpr_fe,
-                              alpha=0.3, color='red')
+        self._ax.plot(self.wave, self.flux, color='k', alpha=0.7, lw=1,
+                      zorder=0)
+        self._ax.fill_between(self.wave, self.flux - self.flux_err,
+                              self.flux + self.flux_err,
+                              alpha=0.3, color='grey', zorder=-1)
 
-    def predict(self, x_pred, verbose=True):
+        self._ax.plot(gpr_w, gpr_f, color='red', zorder=2, lw=1)
+        self._ax.fill_between(gpr_w, gpr_f - gpr_fe, gpr_f + gpr_fe,
+                              alpha=0.3, color='red', zorder=1)
+
+    def predict(self, X_pred):
         """Use the created GPR model to make a prediction at any given points.
 
         Args:
@@ -439,11 +186,11 @@ class Spextractor:
             var (numpy.ndarray): Variance at the prediction points.
 
         """
-        return self._predict(x_pred, self.model, self.kernel, verbose)
+        return gpr.predict(X_pred, self.model, self.kernel)
 
     def create_model(self, sigma_outliers=3, downsample_method='weighted',
-                     downsampling=None, downsampling_R=None,
-                     model_uncertainty=True, optimize_noise=False):
+                     downsampling=None, model_uncertainty=True,
+                     optimize_noise=False):
         if optimize_noise and model_uncertainty:
             msg = ('Having a non-zero noise with given uncertainty is not '
                    'statistically legitimate.')
@@ -453,13 +200,6 @@ class Spextractor:
             self._filter_outliers(sigma_outliers, downsample_method)
             self._normalize_flux()
 
-        if downsampling_R is not None:
-            if downsampling is not None:
-                msg = ("'downsampling' parameter overridden by "
-                       "'downsampling_R' value")
-                self._logger.info(msg)
-            downsampling = get_downsample_factor(self.wave, downsampling_R)
-
         if downsampling is not None:
             self._downsample(downsampling, downsample_method)
             # self._normalize_flux()
@@ -468,8 +208,9 @@ class Spextractor:
         if model_uncertainty:
             y_err = self.flux_err
 
-        model, kern = self._get_gpr_model(self.wave, self.flux, y_err=y_err,
-                                          optimize_noise=optimize_noise)
+        model, kern = gpr.model(self.wave, self.flux, y_err=y_err,
+                                optimize_noise=optimize_noise,
+                                logger=self._logger)
 
         self._model = model
         self.kernel = kern
@@ -486,7 +227,7 @@ class Spextractor:
 
         return self._model
 
-    def process(self, high_velocity=False, hv_clustering_method='MeanShift',
+    def process(self, high_velocity=False, hv_clustering_method='meanshift',
                 plot=False, predict_res=2000):
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
@@ -545,42 +286,64 @@ class Spextractor:
             mask = (lo_max_wave <= gpr_wave_pred) & (gpr_wave_pred <= hi_max_wave)
             feat_wave = gpr_wave_pred[mask]
             feat_mean = gpr_mean[mask]
-            feat_mean_err = np.sqrt(gpr_variance[mask])
+            feat_err = np.sqrt(gpr_variance[mask])
 
             # Velocity calculation
             if high_velocity:
-                vel_out = self._compute_speed_hv(rest_wave, feat_wave,
-                                                 feat_mean, plot,
-                                                 hv_clustering_method)
+                lam_hv, lam_err_hv, vel_hv, vel_err_hv = \
+                    feature.velocity_high(feat_wave, feat_mean, rest_wave,
+                                          self._model, self.kernel,
+                                          hv_clustering_method)
 
-                l_hv, l_hv_err, v_hv, v_hv_err = vel_out
-                self.lambda_hv[element] = l_hv
-                self.lambda_hv_err[element] = l_hv_err
-                self.vel_hv[element] = v_hv
-                self.vel_hv_err[element] = v_hv_err
+                self.lambda_hv[element] = lam_hv
+                self.lambda_hv_err[element] = lam_err_hv
+                self.vel_hv[element] = vel_hv
+                self.vel_hv_err[element] = vel_err_hv
 
-            v, v_err = self._compute_speed(rest_wave, feat_wave, feat_mean,
-                                           plot=not high_velocity)
+            vel, vel_err = feature.velocity(feat_wave, feat_mean, rest_wave,
+                                            self._model, self.kernel)
 
-            self.vel[element] = v
-            self.vel_err[element] = v_err
+            self.vel[element] = vel
+            self.vel_err[element] = vel_err
 
-            if np.isnan(v):
-                # The feature was not detected
+            if np.isnan(vel):
                 self.pew[element] = np.nan
                 self.pew_err[element] = np.nan
+                self.line_depth[element] = np.nan
+                self.line_depth_err[element] = np.nan
                 continue
 
+            if plot:
+                lam_min = feat_wave[feat_mean.argmin()]
+                self._ax.axvline(lam_min, ymax=min(feat_mean), color='k',
+                                 linestyle='--')
+
             # pEW calculation
-            pew, pew_err = self._compute_pEW(feat_wave, feat_mean, plot)
+            pew, pew_err = feature.pEW(feat_wave, feat_mean)
             self.pew[element] = pew
             self.pew_err[element] = pew_err
 
+            if plot:
+                wave_range = feat_wave[[0, -1]]
+                flux_range = feat_mean[[0, -1]]
+
+                continuum = interpolate.linear(feat_wave, wave_range,
+                                               flux_range)
+
+                self._ax.scatter(wave_range, flux_range, color='k', s=30)
+                self._ax.fill_between(feat_wave, feat_mean, continuum,
+                                      color='#00a3cc', alpha=0.3)
+
             # Line depth calculation
-            depth, depth_err = self._compute_depth(feat_wave, feat_mean,
-                                                   feat_mean_err)
-            self.line_depth[element] = depth
-            self.line_depth_err[element] = depth_err
+            line_depth, line_depth_err = feature.depth(feat_wave, feat_mean,
+                                                       feat_err)
+            self.line_depth[element] = line_depth
+            self.line_depth_err[element] = line_depth_err
+
+            if line_depth < 0.:
+                msg = (f'Calculated unphysical line depth for {element}:'
+                       f'{line_depth:.3f} +- {line_depth_err:.3f}')
+                self._logger.warning(msg)
 
         self._logger.info(f'Calculations took {time.time() - t0:.3f} s.')
         self._logger.handlers = []   # Close log handlers between instantiations

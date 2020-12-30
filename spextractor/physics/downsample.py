@@ -1,26 +1,19 @@
 import numpy as np
-from .util.interpolate import interp_linear
+from ..math import interpolate
 
 
-def downsample(wavelength, flux, flux_err, binning=1, method='weighted'):
-    assert binning >= 1, 'Downsampling factor must be >= 1'
-
-    if binning == 1:
-        return wavelength, flux, flux_err
-
-    assert wavelength.shape == flux.shape
-    assert wavelength.shape == flux_err.shape
+def downsample(wave, flux, flux_err, binning=1, method='weighted'):
+    if binning <= 1:
+        return wave, flux, flux_err
 
     if method == 'weighted':
-        return _downsample_average(wavelength, flux, flux_err, binning)
+        return _downsample_average(wave, flux, flux_err, binning)
     elif method == 'remove':
-        assert isinstance(binning, int), \
-            'Downsampling factor must be integer for removal method'
-        return _downsample_remove(wavelength, flux, flux_err, binning)
+        return _downsample_remove(wave, flux, flux_err, binning)
 
 
-def _downsample_remove(wavelength, flux, flux_err, binning):
-    new_wavelength = wavelength[::binning]
+def _downsample_remove(wave, flux, flux_err, binning):
+    new_wavelength = wave[::binning]
     new_flux = flux[::binning]
     new_flux_err = flux_err[::binning]
 
@@ -36,7 +29,7 @@ def _downsample_average(wave, flux, flux_err, binning):
     new_wavelength = 0.5 * (endpoint_wave[:-1] + endpoint_wave[1:])
 
     endpoint_flux, endpoint_flux_var = \
-        interp_linear(endpoint_wave, wave, flux, flux_err)
+        interpolate.linear(endpoint_wave, wave, flux, flux_err)
 
     new_flux = []
     new_flux_var = []
@@ -79,19 +72,3 @@ def _downsample_average(wave, flux, flux_err, binning):
     # Filter for flux = np.nan?
 
     return new_wavelength, new_flux, new_flux_err
-
-
-def get_downsample_factor(wavelength, R, round_factor=False):
-    interval = (wavelength[-1] - wavelength[0]) / (len(wavelength) - 1)
-    lam = (wavelength[-1] + wavelength[0]) / 2
-    dlam = lam / R
-
-    if round_factor:
-        factor = int(np.around(dlam / interval))
-    else:
-        factor = dlam / interval
-
-    if factor < 1:
-        return 1
-
-    return factor

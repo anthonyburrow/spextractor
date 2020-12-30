@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def interp_linear(x_new, x, y, y_err=None):
+def linear(x_new, x, y, y_err=None):
     '''
 
     '''
