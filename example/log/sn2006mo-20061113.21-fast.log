@@ -1,39 +1,39 @@
 INFO: Loading data from ./spectra/sn2006mo-20061113.21-fast.flm
 
 WARNING: Attempted to use model without generating first. Creating model with default parameters...
-INFO: Downsampled in 0.10 s.
+INFO: Downsampled in 0.01 s.
 
 INFO: No flux uncertainty detected - optimizing noise parameter.
 INFO: Created GP
-INFO: Optimised in 0.17 s.
+INFO: Optimised in 0.11 s.
 INFO: 
 Name : GP regression
-Objective : -190.45043383132858
+Objective : -190.39196806476548
 Number of Parameters : 3
 Number of Optimization Parameters : 3
 Updates : True
 Parameters:
   [1mGP_regression.         [0;0m  |                   value  |  constraints  |  priors
-  [1mMat32.variance         [0;0m  |     0.21468798792511162  |      +ve      |        
-  [1mMat32.lengthscale      [0;0m  |      310.63115896639493  |      +ve      |        
-  [1mGaussian_noise.variance[0;0m  |  0.00026925579727035643  |      +ve      |        
+  [1mMat32.variance         [0;0m  |      0.2160583938726284  |      +ve      |        
+  [1mMat32.lengthscale      [0;0m  |       311.3203157627704  |      +ve      |        
+  [1mGaussian_noise.variance[0;0m  |  0.00026955551865298833  |      +ve      |        
 INFO: Predicted in 0.03 s.
 
-INFO: Auto-removed 269 data points
+INFO: Auto-removed 266 data points
 INFO: Flux error added to GPy kernel
 INFO: Created GP
-INFO: Optimised in 19.17 s.
+INFO: Optimised in 15.66 s.
 INFO: 
 Name : GP regression
-Objective : -4565.840640744711
+Objective : -4565.754161964988
 Number of Parameters : 4
 Number of Optimization Parameters : 2
 Updates : True
 Parameters:
   [1mGP_regression.         [0;0m  |               value  |  constraints  |  priors
-  [1msum.Mat32.variance     [0;0m  |  0.2513662833651985  |      +ve      |        
-  [1msum.Mat32.lengthscale  [0;0m  |  299.94738618487787  |      +ve      |        
+  [1msum.Mat32.variance     [0;0m  |  0.2536373054044931  |      +ve      |        
+  [1msum.Mat32.lengthscale  [0;0m  |  299.94710417000493  |      +ve      |        
   [1msum.fixed.variance     [0;0m  |                 1.0  |   +ve fixed   |        
   [1mGaussian_noise.variance[0;0m  |               1e-06  |   +ve fixed   |        
-INFO: Predicted in 0.31 s.
+INFO: Predicted in 0.25 s.
 
