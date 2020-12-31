@@ -1,5 +1,6 @@
 INFO: Loading data from ./spectra/sn2006mo-20061113.21-fast.flm
 
+WARNING: Attempted to use model without generating first. Creating model with default parameters...
 INFO: No flux uncertainty detected - optimizing noise parameter.
 INFO: Created GP
 INFO: 
@@ -13,21 +14,18 @@ Parameters:
   [1mMat32.variance         [0;0m  |      0.2160583938726284  |      +ve      |        
   [1mMat32.lengthscale      [0;0m  |       311.3203157627704  |      +ve      |        
   [1mGaussian_noise.variance[0;0m  |  0.00026955551865298833  |      +ve      |        
-INFO: Removed 266 outliers outside a 3-sigma threshold.
-INFO: Downsampled from 2244 points with factor of 3.00.
-
+INFO: Removed 266 outliers outside a 3.0-sigma threshold.
 INFO: Flux error added to GPy kernel
 INFO: Created GP
 INFO: 
 Name : GP regression
-Objective : -1552.0074261722382
+Objective : -4565.754161964988
 Number of Parameters : 4
 Number of Optimization Parameters : 2
 Updates : True
 Parameters:
-  [1mGP_regression.         [0;0m  |                value  |  constraints  |  priors
-  [1msum.Mat32.variance     [0;0m  |  0.20721584174668778  |      +ve      |        
-  [1msum.Mat32.lengthscale  [0;0m  |   205.72732658803656  |      +ve      |        
-  [1msum.fixed.variance     [0;0m  |                  1.0  |   +ve fixed   |        
-  [1mGaussian_noise.variance[0;0m  |                1e-06  |   +ve fixed   |        
-INFO: Calculations took 0.729 s.
+  [1mGP_regression.         [0;0m  |               value  |  constraints  |  priors
+  [1msum.Mat32.variance     [0;0m  |  0.2536373054044931  |      +ve      |        
+  [1msum.Mat32.lengthscale  [0;0m  |  299.94710417000493  |      +ve      |        
+  [1msum.fixed.variance     [0;0m  |                 1.0  |   +ve fixed   |        
+  [1mGaussian_noise.variance[0;0m  |               1e-06  |   +ve fixed   |        

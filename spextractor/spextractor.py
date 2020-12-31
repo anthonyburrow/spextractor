@@ -5,20 +5,47 @@ import time
 from .util.io import load_spectra
 from .util.log import setup_log
 from .util.manual import ManualRange
+from .physics import doppler, feature
 from .physics.lines import get_lines
-from .physics import doppler
-from .physics import feature
 from .physics.downsample import downsample
-from .math import interpolate
-from .math import gpr
+from .math import interpolate, gpr
 
 
 class Spextractor:
 
     def __init__(self, data, z=None, sn_type='Ia', manual_range=False,
-                 remove_zeroes=True, auto_prune=True, prune_excess=250,
-                 outlier_downsampling=20):
+                 remove_zeroes=True, auto_prune=True, prune_excess=250.,
+                 outlier_downsampling=20.):
+        """Constructor for the Spextractor class.
 
+        Parameters
+        ----------
+        data : str, numpy.ndarray
+            Spectral data (can be unnormalized) where columns are wavelengths
+            (Angstroms), flux, and flux uncertainty.
+        z : float, optional
+            Redshift value for rest-frame wavelength correction.
+        sn_type : str, optional
+            Type of SN. This is 'Ia', 'Ib', or 'Ic', unless changes are made in
+            "./physics/lines.py". The default ('Ia') may be kept if not working
+            with SNe and just doing downsampling or GPR fitting.
+        manual_range : bool, optional
+            Used for manually setting feature minimum/maximum ranges via a
+            spectrum plot. False by default.
+        remove_zeroes : bool, optional
+            Completely remove data points with flux equal to 0. in the data
+            set.
+        auto_prune : bool, optional
+            Uninclude data points outside of the minimum/maximum feature ranges
+            specified in "./physics/lines.py".
+        prune_excess : float, optional
+            A buffer (in Angstroms) to each side of the auto-pruning window.
+            This is 250. by default.
+        outlier_downsampling : float, optional
+            Downsampling factor if outliers are removed from the GPR training
+            set. This is meant to be relatively large for quickly performing
+            the first GPR fit used to select outliers.
+        """
         log_fn = None
         if isinstance(data, str):
             log_fn = f'{data.rsplit(".", 1)[0]:s}.log'
@@ -47,7 +74,7 @@ class Spextractor:
 
         self._outlier_ds_factor = outlier_downsampling
 
-        # Undefined instance variables
+        # Undefined instance attributes
         self._model = None
         self.kernel = None
 
@@ -64,133 +91,41 @@ class Spextractor:
 
         self._fig, self._ax = None, None
 
-    def _setup_data(self, data):
-        """Set up flux (with uncertainty) and wavelength data."""
-        if isinstance(data, str):
-            self._logger.info(f'Loading data from {data:s}\n')
-            return load_spectra(data)
-
-        wave = data[:, 0]
-        flux = data[:, 1]
-        try:
-            flux_err = data[:, 2]
-        except IndexError:
-            msg = 'No flux uncertainties found while reading file.'
-            self._logger.info(msg)
-            flux_err = np.zeros(len(flux))
-
-        return wave, flux, flux_err
-
-    def _normalize_flux(self):
-        """Normalize the flux."""
-        max_flux = self.flux.max()
-        self.flux /= max_flux
-
-        if np.any(self.flux_err):
-            self.flux_err /= max_flux
-
-    def _remove_zeroes(self):
-        """Remove zero-flux values."""
-        mask = self.flux != 0
-        self.wave = self.wave[mask]
-        self.flux_err = self.flux_err[mask]
-        self.flux = self.flux[mask]
-
-    def _auto_prune(self, prune_excess):
-        """Remove data outside feature range (for less computation)."""
-        wav_min = min(self._lines[li]['lo_range'][0] for li in self._lines)
-        wav_max = max(self._lines[li]['hi_range'][1] for li in self._lines)
-
-        wav_min -= prune_excess
-        wav_max += prune_excess
-
-        mask = (wav_min <= self.wave) & (self.wave <= wav_max)
-
-        self.flux = self.flux[mask]
-        self.flux_err = self.flux_err[mask]
-        self.wave = self.wave[mask]
-
-    def _filter_outliers(self, sigma_outliers, downsample_method):
-        """Attempt to remove sharp lines (teluric, cosmic rays...).
-
-        First applies a heavy downsampling and then discards points that are
-        further than 'sigma_outliers' standard deviations.
-
-        """
-        x, y, _ = downsample(self.wave, self.flux, self.flux_err,
-                             binning=self._outlier_ds_factor,
-                             method=downsample_method)
-
-        model, kernel = gpr.model(x, y, y_err=None, optimize_noise=True,
-                                  logger=self._logger)
-        mean, var = gpr.predict(self.wave, model, kernel)
-
-        sigma = np.sqrt(var)
-        valid = np.abs(self.flux - mean) < sigma_outliers * sigma
-
-        self.wave = self.wave[valid]
-        self.flux = self.flux[valid]
-        self.flux_err = self.flux_err[valid]
-
-        msg = (f'Removed {len(valid) - valid.sum()} outliers outside a '
-               f'{sigma_outliers}-sigma threshold.')
-        self._logger.info(msg)
-
-    def _downsample(self, downsampling, downsample_method):
-        """Handle downsampling."""
-        n_flux_data = len(self.flux)
-        sample_limit = 2300   # Depends on Python memory limits
-        if n_flux_data / downsampling > sample_limit:
-            downsampling = n_flux_data / sample_limit + 0.1
-            msg = (f'Flux array is too large for memory. Downsampling '
-                   f'factor increased to {downsampling:.3f}')
-            self._logger.warning(msg)
-        self.wave, self.flux, self.flux_err = \
-            downsample(self.wave, self.flux, self.flux_err,
-                       binning=downsampling, method=downsample_method)
-
-        msg = (f'Downsampled from {n_flux_data} points with factor of '
-               f'{downsampling:.2f}.\n')
-        self._logger.info(msg)
-
-    def _setup_plot(self, gpr_w, gpr_f, gpr_fe):
-        if self._fig is not None:
-            return
-
-        import matplotlib.pyplot as plt
-
-        self._fig, self._ax = plt.subplots()
-
-        self._ax.set_xlabel(r'$\mathrm{Rest\ wavelength}\ (\AA)$', size=14)
-        self._ax.set_ylabel(r'$\mathrm{Normalized\ flux}$', size=14)
-        self._ax.set_ylim(0, 1)
-
-        self._ax.plot(self.wave, self.flux, color='k', alpha=0.7, lw=1,
-                      zorder=0)
-        self._ax.fill_between(self.wave, self.flux - self.flux_err,
-                              self.flux + self.flux_err,
-                              alpha=0.3, color='grey', zorder=-1)
-
-        self._ax.plot(gpr_w, gpr_f, color='red', zorder=2, lw=1)
-        self._ax.fill_between(gpr_w, gpr_f - gpr_fe, gpr_f + gpr_fe,
-                              alpha=0.3, color='red', zorder=1)
-
-    def predict(self, X_pred):
-        """Use the created GPR model to make a prediction at any given points.
-
-        Args:
-            x_pred (numpy.ndarray): Test input set at which to predict.
-
-        Returns:
-            mean (numpy.ndarray): Mean values at the prediction points.
-            var (numpy.ndarray): Variance at the prediction points.
-
-        """
-        return gpr.predict(X_pred, self.model, self.kernel)
-
-    def create_model(self, sigma_outliers=3, downsample_method='weighted',
+    def create_model(self, sigma_outliers=3., downsample_method='weighted',
                      downsampling=None, model_uncertainty=True,
                      optimize_noise=False):
+        """Makes specifications to the GPR model.
+
+        Parameters
+        ----------
+        sigma_outliers : float, optional
+            Sigma factor that defines outliers. Sigma is the calculated
+            standard deviation of the heavily downsampled GPR fit. This is 3.
+            by default. Set to `None` to cancel this process.
+        downsample_method : str, optional
+            Method of downsampling. May be 'weighted' (integrates at each bin
+            to conserve photon flux) or 'remove' (uses only every
+            `downsampling`th point; this is not as accurate but faster than
+            'weighted').
+        downsampling : float, optional
+            Downsampling factor used for the GPR fit. Downsampled data will
+            thus be `1 / downsampling` of its original size. If `downsampling
+            <= 1.`, the original data will be used.
+        model_uncertainty : bool, optional
+            If True (default), the flux uncertainty is included in the GPR fit.
+            Otherwise, `optimize_noise` is treated as True to allow the GPR
+            some noise freedom (preventing overfitting). If no flux uncertainty
+            is provided, this is assumed False.
+        optimize_noise : bool, optional
+            Optimize the noise parameter in the GPR kernel. This is False by
+            default. Should probably (maybe) be False if `model_uncertainty` is
+            True.
+
+        Returns
+        -------
+        GPy.models.GPRegression
+            The GPR model that is created.
+        """
         if optimize_noise and model_uncertainty:
             msg = ('Having a non-zero noise with given uncertainty is not '
                    'statistically legitimate.')
@@ -217,15 +152,26 @@ class Spextractor:
 
         return model
 
-    @property
-    def model(self):
-        if self._model is None:
-            msg = ('Attempted to use model without generating first. '
-                   'Creating model with default parameters...')
-            self._logger.warning(msg)
-            self.create_model()
+    def reset_model(self):
+        """Clears the current GPR model."""
+        self._model = None
+        self.kernel = None
 
-        return self._model
+    def predict(self, X_pred):
+        """Use the created GPR model to make a prediction at any given points.
+
+        Parameters
+        ----------
+        X_pred : numpy.ndarray
+            Test input set at which to predict.
+
+        Returns
+        -------
+        (numpy.ndarray, numpy.ndarray)
+            A tuple consisting of the mean and variance values calculated at
+            each of the prediction points.
+        """
+        return gpr.predict(X_pred, self.model, self.kernel)
 
     def process(self, high_velocity=False, hv_clustering_method='meanshift',
                 plot=False, predict_res=2000):
@@ -243,7 +189,7 @@ class Spextractor:
             Create a plot of data, model, and spectral features. Default is
             False.
         predict_res : int, optional
-            Sample size (resolution) of prediction values predicted by GPy
+            Sample size (resolution) of prediction values predicted by GPR
             model.
         """
         t0 = time.time()
@@ -349,6 +295,16 @@ class Spextractor:
         self._logger.handlers = []   # Close log handlers between instantiations
 
     @property
+    def model(self):
+        if self._model is None:
+            msg = ('Attempted to use model without generating first. '
+                   'Creating model with default parameters...')
+            self._logger.warning(msg)
+            self.create_model()
+
+        return self._model
+
+    @property
     def rsi(self):
         try:
             ld5800 = self.line_depth['Si II 5800A']
@@ -379,3 +335,115 @@ class Spextractor:
             return None, None
 
         return self._fig, self._ax
+
+    def _setup_data(self, data):
+        """Set up flux (with uncertainty) and wavelength data."""
+        if isinstance(data, str):
+            self._logger.info(f'Loading data from {data:s}\n')
+            return load_spectra(data)
+
+        wave = data[:, 0]
+        flux = data[:, 1]
+        try:
+            flux_err = data[:, 2]
+        except IndexError:
+            msg = 'No flux uncertainties found while reading file.'
+            self._logger.info(msg)
+            flux_err = np.zeros(len(flux))
+
+        return wave, flux, flux_err
+
+    def _normalize_flux(self):
+        """Normalize the flux."""
+        max_flux = self.flux.max()
+        self.flux /= max_flux
+
+        if np.any(self.flux_err):
+            self.flux_err /= max_flux
+
+    def _remove_zeroes(self):
+        """Remove zero-flux values."""
+        mask = self.flux != 0
+        self.wave = self.wave[mask]
+        self.flux_err = self.flux_err[mask]
+        self.flux = self.flux[mask]
+
+    def _auto_prune(self, prune_excess):
+        """Remove data outside feature range (for less computation)."""
+        wav_min = min(self._lines[li]['lo_range'][0] for li in self._lines)
+        wav_max = max(self._lines[li]['hi_range'][1] for li in self._lines)
+
+        wav_min -= prune_excess
+        wav_max += prune_excess
+
+        mask = (wav_min <= self.wave) & (self.wave <= wav_max)
+
+        self.flux = self.flux[mask]
+        self.flux_err = self.flux_err[mask]
+        self.wave = self.wave[mask]
+
+    def _filter_outliers(self, sigma_outliers, downsample_method):
+        """Attempt to remove sharp lines (teluric, cosmic rays...).
+
+        First applies a heavy downsampling and then discards points that are
+        further than 'sigma_outliers' standard deviations.
+
+        """
+        x, y, _ = downsample(self.wave, self.flux, self.flux_err,
+                             binning=self._outlier_ds_factor,
+                             method=downsample_method)
+
+        model, kernel = gpr.model(x, y, y_err=None, optimize_noise=True,
+                                  logger=self._logger)
+        mean, var = gpr.predict(self.wave, model, kernel)
+
+        sigma = np.sqrt(var)
+        valid = np.abs(self.flux - mean) < sigma_outliers * sigma
+
+        self.wave = self.wave[valid]
+        self.flux = self.flux[valid]
+        self.flux_err = self.flux_err[valid]
+
+        msg = (f'Removed {len(valid) - valid.sum()} outliers outside a '
+               f'{sigma_outliers}-sigma threshold.')
+        self._logger.info(msg)
+
+    def _downsample(self, downsampling, downsample_method):
+        """Handle downsampling."""
+        n_flux_data = len(self.flux)
+        sample_limit = 2300   # Depends on Python memory limits
+        if n_flux_data / downsampling > sample_limit:
+            downsampling = n_flux_data / sample_limit + 0.1
+            msg = (f'Flux array is too large for memory. Downsampling '
+                   f'factor increased to {downsampling:.3f}')
+            self._logger.warning(msg)
+        self.wave, self.flux, self.flux_err = \
+            downsample(self.wave, self.flux, self.flux_err,
+                       binning=downsampling, method=downsample_method)
+
+        msg = (f'Downsampled from {n_flux_data} points with factor of '
+               f'{downsampling:.2f}.\n')
+        self._logger.info(msg)
+
+    def _setup_plot(self, gpr_w, gpr_f, gpr_fe):
+        """Setup the spectrum plot."""
+        if self._fig is not None:
+            return
+
+        import matplotlib.pyplot as plt
+
+        self._fig, self._ax = plt.subplots()
+
+        self._ax.set_xlabel(r'$\mathrm{Rest\ wavelength}\ (\AA)$', size=14)
+        self._ax.set_ylabel(r'$\mathrm{Normalized\ flux}$', size=14)
+        self._ax.set_ylim(0, 1)
+
+        self._ax.plot(self.wave, self.flux, color='k', alpha=0.7, lw=1,
+                      zorder=0)
+        self._ax.fill_between(self.wave, self.flux - self.flux_err,
+                              self.flux + self.flux_err, color='grey',
+                              alpha=0.5, zorder=-1)
+
+        self._ax.plot(gpr_w, gpr_f, color='red', zorder=2, lw=1)
+        self._ax.fill_between(gpr_w, gpr_f - gpr_fe, gpr_f + gpr_fe,
+                              alpha=0.3, color='red', zorder=1)

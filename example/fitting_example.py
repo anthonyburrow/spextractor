@@ -11,11 +11,14 @@ import numpy as np
 
 fn = './spectra/sn2006mo-20061113.21-fast.flm'
 z = 0.0459
+
 spex = Spextractor(fn, z=z)
 
+'''
+Prediction without doing `create_model()` first generates a model with default
+parameters
+'''
 # spex.create_model(downsampling=3)
 
-# Prediction without doing `create_model()` first
-# generates a model with default parameters
 wave_pred = np.linspace(5500, 6000, 1000)
 mean, var = spex.predict(wave_pred)
