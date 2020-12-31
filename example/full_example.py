@@ -37,6 +37,7 @@ spex.create_model(downsampling=3.)
 Do feature calculations (velocity, pEW, depth, etc.).
 
 - Features are based on those provided in "spextractor/physics/lines.py".
+- Can specify only specific features to process with `features` argument.
 - Features may be retrieved through the dictionary attributes `.pew`,
   `.pew_err`, `.vel`, `.vel_err`, etc.
 - Keys to dictionary attributes are the strings again found in the "lines.py",

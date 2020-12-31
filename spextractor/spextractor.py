@@ -6,7 +6,7 @@ from .util.io import load_spectra
 from .util.log import setup_log
 from .util.manual import ManualRange
 from .physics import doppler, feature
-from .physics.lines import get_lines
+from .physics.lines import get_features
 from .physics.downsample import downsample
 from .math import interpolate, gpr
 
@@ -59,14 +59,14 @@ class Spextractor:
             self._remove_zeroes()
 
         if isinstance(sn_type, str):
-            self._lines = get_lines(sn_type)
+            self._features = get_features(sn_type)
         else:
-            self._lines = sn_type
+            self._features = sn_type
 
         if manual_range:
             self._logger.info('Manually changing feature bounds...')
-            m = ManualRange(self.wave, self.flux, self._lines, self._logger)
-            self._lines = m.def_lines
+            m = ManualRange(self.wave, self.flux, self._features, self._logger)
+            self._features = m.def_features
 
         if auto_prune:
             self._auto_prune(prune_excess)
@@ -86,8 +86,8 @@ class Spextractor:
         self.lambda_hv_err = {}
         self.vel_hv = {}
         self.vel_hv_err = {}
-        self.line_depth = {}
-        self.line_depth_err = {}
+        self.depth = {}
+        self.depth_err = {}
 
         self._fig, self._ax = None, None
 
@@ -173,13 +173,17 @@ class Spextractor:
         """
         return gpr.predict(X_pred, self.model, self.kernel)
 
-    def process(self, high_velocity=False, hv_clustering_method='meanshift',
-                plot=False, predict_res=2000):
+    def process(self, features=None, plot=False, predict_res=2000,
+                high_velocity=False, hv_clustering_method='meanshift'):
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
 
         Parameters
         ----------
+        features : list, optional
+            Iterable containing strings of features of which to calculate
+            properties. These must be included in "./physics/lines.py". By
+            default, every feature in "lines.py" is processed.
         high_velocity : bool, optional
             Calculate based on high-velocity properties. Default is False.
         hv_clustering_method : str, optional
@@ -201,26 +205,29 @@ class Spextractor:
         if plot:
             self._setup_plot(gpr_wave_pred, gpr_mean, gpr_sigma)
 
-        for element in self._lines:
+        if features is None:
+            features = self._features
+
+        for _feature in features:
             # Get feature slice
-            rest_wave = self._lines[element]['rest']
-            lo_range = self._lines[element]['lo_range']
-            hi_range = self._lines[element]['hi_range']
+            rest_wave = self._features[_feature]['rest']
+            lo_range = self._features[_feature]['lo_range']
+            hi_range = self._features[_feature]['hi_range']
 
             lo_mask = (lo_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= lo_range[1])
             hi_mask = (hi_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= hi_range[1])
 
+            # If the feature isn't contained in the spectrum
             if not (np.any(lo_mask) and np.any(hi_mask)):
-                # Feature not contained in spectrum
                 if high_velocity:
-                    self.lambda_hv[element] = []
-                    self.lambda_hv_err[element] = []
-                    self.vel_hv[element] = []
-                    self.vel_hv_err[element] = []
-                self.vel[element] = np.nan
-                self.vel_err[element] = np.nan
-                self.pew[element] = np.nan
-                self.pew_err[element] = np.nan
+                    self.lambda_hv[_feature] = []
+                    self.lambda_hv_err[_feature] = []
+                    self.vel_hv[_feature] = []
+                    self.vel_hv_err[_feature] = []
+                self.vel[_feature] = np.nan
+                self.vel_err[_feature] = np.nan
+                self.pew[_feature] = np.nan
+                self.pew_err[_feature] = np.nan
                 continue
 
             lo_max_ind = gpr_mean[lo_mask].argmax()
@@ -241,22 +248,22 @@ class Spextractor:
                                           self._model, self.kernel,
                                           hv_clustering_method)
 
-                self.lambda_hv[element] = lam_hv
-                self.lambda_hv_err[element] = lam_err_hv
-                self.vel_hv[element] = vel_hv
-                self.vel_hv_err[element] = vel_err_hv
+                self.lambda_hv[_feature] = lam_hv
+                self.lambda_hv_err[_feature] = lam_err_hv
+                self.vel_hv[_feature] = vel_hv
+                self.vel_hv_err[_feature] = vel_err_hv
 
             vel, vel_err = feature.velocity(feat_wave, feat_mean, rest_wave,
                                             self._model, self.kernel)
 
-            self.vel[element] = vel
-            self.vel_err[element] = vel_err
+            self.vel[_feature] = vel
+            self.vel_err[_feature] = vel_err
 
             if np.isnan(vel):
-                self.pew[element] = np.nan
-                self.pew_err[element] = np.nan
-                self.line_depth[element] = np.nan
-                self.line_depth_err[element] = np.nan
+                self.pew[_feature] = np.nan
+                self.pew_err[_feature] = np.nan
+                self.depth[_feature] = np.nan
+                self.depth_err[_feature] = np.nan
                 continue
 
             if plot:
@@ -266,8 +273,8 @@ class Spextractor:
 
             # pEW calculation
             pew, pew_err = feature.pEW(feat_wave, feat_mean)
-            self.pew[element] = pew
-            self.pew_err[element] = pew_err
+            self.pew[_feature] = pew
+            self.pew_err[_feature] = pew_err
 
             if plot:
                 wave_range = feat_wave[[0, -1]]
@@ -281,14 +288,13 @@ class Spextractor:
                                       color='#00a3cc', alpha=0.3)
 
             # Line depth calculation
-            line_depth, line_depth_err = feature.depth(feat_wave, feat_mean,
-                                                       feat_err)
-            self.line_depth[element] = line_depth
-            self.line_depth_err[element] = line_depth_err
+            depth, depth_err = feature.depth(feat_wave, feat_mean, feat_err)
+            self.depth[_feature] = depth
+            self.depth_err[_feature] = depth_err
 
-            if line_depth < 0.:
-                msg = (f'Calculated unphysical line depth for {element}:'
-                       f'{line_depth:.3f} +- {line_depth_err:.3f}')
+            if depth < 0.:
+                msg = (f'Calculated unphysical line depth for {_feature}:'
+                       f'{depth:.3f} +- {depth_err:.3f}')
                 self._logger.warning(msg)
 
         self._logger.info(f'Calculations took {time.time() - t0:.3f} s.')
@@ -307,8 +313,8 @@ class Spextractor:
     @property
     def rsi(self):
         try:
-            ld5800 = self.line_depth['Si II 5800A']
-            ld6150 = self.line_depth['Si II 6150A']
+            ld5800 = self.depth['Si II 5800A']
+            ld6150 = self.depth['Si II 6150A']
             _rsi = ld5800 / ld6150
         except KeyError:
             _rsi = np.nan
@@ -318,8 +324,8 @@ class Spextractor:
     @property
     def rsi_err(self):
         try:
-            ld5800_err = self.line_depth_err['Si II 5800A']
-            ld6150_err = self.line_depth_err['Si II 6150A']
+            ld5800_err = self.depth_err['Si II 5800A']
+            ld6150_err = self.depth_err['Si II 6150A']
             _rsi_err = np.sqrt(ld5800_err**2 + ld6150_err**2)
         except KeyError:
             _rsi_err = np.nan
@@ -370,8 +376,8 @@ class Spextractor:
 
     def _auto_prune(self, prune_excess):
         """Remove data outside feature range (for less computation)."""
-        wav_min = min(self._lines[li]['lo_range'][0] for li in self._lines)
-        wav_max = max(self._lines[li]['hi_range'][1] for li in self._lines)
+        wav_min = min(self._features[li]['lo_range'][0] for li in self._features)
+        wav_max = max(self._features[li]['hi_range'][1] for li in self._features)
 
         wav_min -= prune_excess
         wav_max += prune_excess

@@ -39,7 +39,7 @@ sn_types = {
 }
 
 
-def get_lines(sn_type: str):
+def get_features(sn_type: str):
     lines = sn_types[sn_type]
 
     line_info = {}
