@@ -64,4 +64,9 @@ ax.set_title('Ia_example')
 plt.tight_layout()
 fig.savefig('Ia_example.png', dpi=300)
 
+'''
+May want to close the plots if running on a large number of spectra to prevent
+huge memory leaks. (This should always be dealt with when using matplotlib
+like this.)
+'''
 plt.close('all')
