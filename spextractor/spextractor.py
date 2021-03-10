@@ -53,7 +53,6 @@ class Spextractor:
 
         self.wave, self.flux, self.flux_err = self._setup_data(data)
         self.wave = doppler.deredshift(self.wave, z=z)
-        self._normalize_flux()
 
         if remove_zeroes:
             self._remove_zeroes()
@@ -70,7 +69,10 @@ class Spextractor:
 
         if auto_prune:
             self._auto_prune(prune_excess)
-            self._normalize_flux()
+
+        self.fmax_in = self.flux.max()
+        self.fmax_out = self.fmax_in
+        self._normalize_flux()
 
         self._outlier_ds_factor = outlier_downsampling
 
@@ -133,11 +135,12 @@ class Spextractor:
 
         if sigma_outliers is not None:
             self._filter_outliers(sigma_outliers, downsample_method)
-            self._normalize_flux()
 
         if downsampling is not None:
             self._downsample(downsampling, downsample_method)
-            # self._normalize_flux()
+
+        self.fmax_out *= self.flux.max()
+        self._normalize_flux()
 
         y_err = np.zeros_like(self.flux_err)
         if model_uncertainty:
