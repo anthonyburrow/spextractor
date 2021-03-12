@@ -148,7 +148,8 @@ class Spextractor:
         if downsampling is not None:
             self._downsample(downsampling, downsample_method)
 
-        self.fmax_out *= self.flux.max()
+        if self._normalize:
+            self.fmax_out *= self.flux.max()
         self._normalize_flux()
 
         y_err = np.zeros_like(self.flux_err)
