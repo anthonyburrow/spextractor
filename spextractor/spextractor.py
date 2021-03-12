@@ -14,8 +14,8 @@ from .math import interpolate, gpr
 class Spextractor:
 
     def __init__(self, data, z=None, sn_type='Ia', manual_range=False,
-                 remove_zeroes=True, auto_prune=True, prune_excess=250.,
-                 outlier_downsampling=20.):
+                 remove_zeroes=True, auto_prune=True, auto_prune_excess=250.,
+                 prune_window=None, outlier_downsampling=20., normalize=True):
         """Constructor for the Spextractor class.
 
         Parameters
@@ -38,13 +38,19 @@ class Spextractor:
         auto_prune : bool, optional
             Uninclude data points outside of the minimum/maximum feature ranges
             specified in "./physics/lines.py".
-        prune_excess : float, optional
+        auto_prune_excess : float, optional
             A buffer (in Angstroms) to each side of the auto-pruning window.
             This is 250. by default.
+        prune_window : tuple, optional
+            Manually-set pruning window. Default is None.
         outlier_downsampling : float, optional
             Downsampling factor if outliers are removed from the GPR training
             set. This is meant to be relatively large for quickly performing
             the first GPR fit used to select outliers.
+        normalize : bool, optional
+            Determines whether the spectrum should be normalized by maximum
+            flux. Default is True (recommended, as GPR will not work well
+            otherwise).
         """
         log_fn = None
         if isinstance(data, str):
@@ -67,9 +73,12 @@ class Spextractor:
             m = ManualRange(self.wave, self.flux, self._features, self._logger)
             self._features = m.def_features
 
-        if auto_prune:
-            self._auto_prune(prune_excess)
+        if prune_window is not None:
+            self._prune(prune_window)
+        elif auto_prune:
+            self._auto_prune(auto_prune_excess)
 
+        self._normalize = normalize
         self.fmax_in = self.flux.max()
         self.fmax_out = self.fmax_in
         self._normalize_flux()
@@ -364,6 +373,9 @@ class Spextractor:
 
     def _normalize_flux(self):
         """Normalize the flux."""
+        if not self._normalize:
+            return
+
         max_flux = self.flux.max()
         self.flux /= max_flux
 
@@ -385,7 +397,11 @@ class Spextractor:
         wav_min -= prune_excess
         wav_max += prune_excess
 
-        mask = (wav_min <= self.wave) & (self.wave <= wav_max)
+        wave_range = wav_min, wav_max
+        self._prune(wave_range)
+
+    def _prune(self, wave_range):
+        mask = (wave_range[0] <= self.wave) & (self.wave <= wave_range[1])
 
         self.flux = self.flux[mask]
         self.flux_err = self.flux_err[mask]
