@@ -30,4 +30,4 @@ Parameters:
   [1msum.Mat32.lengthscale  [0;0m  |   205.5888070506142  |      +ve      |        
   [1msum.fixed.variance     [0;0m  |                 1.0  |   +ve fixed   |        
   [1mGaussian_noise.variance[0;0m  |               1e-06  |   +ve fixed   |        
-INFO: Calculations took 0.422 s.
+INFO: Calculations took 0.758 s.
