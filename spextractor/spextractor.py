@@ -437,7 +437,7 @@ class Spextractor:
     def _downsample(self, downsampling, downsample_method):
         """Handle downsampling."""
         n_flux_data = len(self.flux)
-        sample_limit = 2300   # Depends on Python memory limits
+        sample_limit = 5000   # Depends on Python memory limits
         if n_flux_data / downsampling > sample_limit:
             downsampling = n_flux_data / sample_limit + 0.1
             msg = (f'Flux array is too large for memory. Downsampling '
