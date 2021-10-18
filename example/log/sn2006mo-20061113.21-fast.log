@@ -4,15 +4,15 @@ INFO: No flux uncertainty detected - optimizing noise parameter.
 INFO: Created GP
 INFO: 
 Name : GP regression
-Objective : -190.39196806476903
+Objective : -190.39196806476548
 Number of Parameters : 3
 Number of Optimization Parameters : 3
 Updates : True
 Parameters:
-  [1mGP_regression.         [0;0m  |                 value  |  constraints  |  priors
-  [1mMat32.variance         [0;0m  |   0.21605839387281495  |      +ve      |        
-  [1mMat32.lengthscale      [0;0m  |     311.3203157628612  |      +ve      |        
-  [1mGaussian_noise.variance[0;0m  |  0.000269555518652927  |      +ve      |        
+  [1mGP_regression.         [0;0m  |                   value  |  constraints  |  priors
+  [1mMat32.variance         [0;0m  |      0.2160583938726284  |      +ve      |        
+  [1mMat32.lengthscale      [0;0m  |       311.3203157627704  |      +ve      |        
+  [1mGaussian_noise.variance[0;0m  |  0.00026955551865298833  |      +ve      |        
 INFO: Removed 266 outliers outside a 3.0-sigma threshold.
 INFO: Downsampled from 2244 points with factor of 3.00.
 
@@ -20,14 +20,14 @@ INFO: Flux error added to GPy kernel
 INFO: Created GP
 INFO: 
 Name : GP regression
-Objective : -1522.974972704788
+Objective : -1522.9749727046374
 Number of Parameters : 4
 Number of Optimization Parameters : 2
 Updates : True
 Parameters:
-  [1mGP_regression.         [0;0m  |               value  |  constraints  |  priors
-  [1msum.Mat32.variance     [0;0m  |  0.2237774072571113  |      +ve      |        
-  [1msum.Mat32.lengthscale  [0;0m  |   205.5888070506142  |      +ve      |        
-  [1msum.fixed.variance     [0;0m  |                 1.0  |   +ve fixed   |        
-  [1mGaussian_noise.variance[0;0m  |               1e-06  |   +ve fixed   |        
-INFO: Calculations took 0.758 s.
+  [1mGP_regression.         [0;0m  |                value  |  constraints  |  priors
+  [1msum.Mat32.variance     [0;0m  |  0.22377740725373457  |      +ve      |        
+  [1msum.Mat32.lengthscale  [0;0m  |   205.58880704948436  |      +ve      |        
+  [1msum.fixed.variance     [0;0m  |                  1.0  |   +ve fixed   |        
+  [1mGaussian_noise.variance[0;0m  |                1e-06  |   +ve fixed   |        
+INFO: Calculations took 0.660 s.

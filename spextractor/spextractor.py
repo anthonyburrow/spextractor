@@ -283,6 +283,8 @@ class Spextractor:
                 lam_min = feat_wave[feat_mean.argmin()]
                 self._ax.axvline(lam_min, ymax=min(feat_mean), color='k',
                                  linestyle='--')
+                self._ax.text(lam_min + 30., 0.015, _feature, rotation=90.,
+                              fontsize=8.)
 
             # pEW calculation
             pew, pew_err = feature.pEW(feat_wave, feat_mean)
