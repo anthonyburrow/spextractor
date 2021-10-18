@@ -71,7 +71,7 @@ class Spextractor:
         if manual_range:
             self._logger.info('Manually changing feature bounds...')
             m = ManualRange(self.wave, self.flux, self._features, self._logger)
-            self._features = m.def_features
+            self._features = m.def_lines
 
         if prune_window is not None:
             self._prune(prune_window)
