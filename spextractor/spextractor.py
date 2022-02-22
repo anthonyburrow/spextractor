@@ -81,6 +81,7 @@ class Spextractor:
         self._normalize = normalize
         self.fmax_in = self.flux.max()
         self.fmax_out = self.fmax_in
+        print(self.fmax_in)
         self._normalize_flux()
 
         self._outlier_ds_factor = outlier_downsampling
@@ -362,6 +363,9 @@ class Spextractor:
         if isinstance(data, str):
             self._logger.info(f'Loading data from {data:s}\n')
             return load_spectra(data)
+
+        nan_mask = ~np.isnan(data).any(axis=1)
+        data = data[nan_mask]
 
         wave = data[:, 0]
         flux = data[:, 1]

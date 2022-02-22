@@ -112,6 +112,9 @@ def _load_other(filename):
             print(prev.message, e.message, filename)
             raise e
 
+    nan_mask = ~np.isnan(data).any(axis=1)
+    data = data[nan_mask]
+
     wavel = data[:, 0]
     flux = data[:, 1]
 
