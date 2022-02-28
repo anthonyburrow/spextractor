@@ -81,7 +81,6 @@ class Spextractor:
         self._normalize = normalize
         self.fmax_in = self.flux.max()
         self.fmax_out = self.fmax_in
-        print(self.fmax_in)
         self._normalize_flux()
 
         self._outlier_ds_factor = outlier_downsampling
