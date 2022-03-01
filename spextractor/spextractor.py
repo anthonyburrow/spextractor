@@ -15,7 +15,8 @@ class Spextractor:
 
     def __init__(self, data, z=None, sn_type='Ia', manual_range=False,
                  remove_zeroes=True, auto_prune=True, auto_prune_excess=250.,
-                 prune_window=None, outlier_downsampling=20., normalize=True):
+                 prune_window=None, outlier_downsampling=20., normalize=True,
+                 verbose=False):
         """Constructor for the Spextractor class.
 
         Parameters
@@ -51,11 +52,13 @@ class Spextractor:
             Determines whether the spectrum should be normalized by maximum
             flux. Default is True (recommended, as GPR will not work well
             otherwise).
+        verbose : bool, optional
+            Display output on console.
         """
         log_fn = None
         if isinstance(data, str):
             log_fn = f'{data.rsplit(".", 1)[0]:s}.log'
-        self._logger = setup_log(log_fn)
+        self._logger = setup_log(log_fn, verbose)
 
         self.wave, self.flux, self.flux_err = self._setup_data(data)
         self.wave = doppler.deredshift(self.wave, z=z)

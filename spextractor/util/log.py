@@ -2,7 +2,7 @@ import logging
 import os.path
 
 
-def setup_log(filename):
+def setup_log(filename, verbose=True):
     if not os.path.exists('./log/'):
         os.makedirs('./log/')
 
@@ -31,9 +31,10 @@ def setup_log(filename):
     root.addHandler(fh)
 
     # Console handler
-    ch = logging.StreamHandler()
-    ch.setFormatter(formatter)
-    ch.setLevel(logging.INFO)
-    root.addHandler(ch)
+    if verbose:
+        ch = logging.StreamHandler()
+        ch.setFormatter(formatter)
+        ch.setLevel(logging.INFO)
+        root.addHandler(ch)
 
     return root
