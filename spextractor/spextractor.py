@@ -1,6 +1,7 @@
 import numpy as np
-
 import time
+
+from snpy.utils.deredden import unred
 
 from .util.io import load_spectra
 from .util.log import setup_log
@@ -15,6 +16,7 @@ class Spextractor:
 
     def __init__(self, data, z=None, sn_type='Ia', manual_range=False,
                  remove_zeroes=True, auto_prune=True, auto_prune_excess=250.,
+                 host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,
                  prune_window=None, outlier_downsampling=20., normalize=True,
                  verbose=False):
         """Constructor for the Spextractor class.
@@ -42,6 +44,14 @@ class Spextractor:
         auto_prune_excess : float, optional
             A buffer (in Angstroms) to each side of the auto-pruning window.
             This is 250. by default.
+        host_EBV : float, optional
+            Host galaxy color excess used for dereddening.
+        host_RV : float, optional
+            Host reddening vector used for dereddening.
+        MW_EBV : float, optional
+            MW galaxy color excess used for dereddening.
+        MW_RV : float, optional
+            MW reddening vector used for dereddening. Default is 3.1.
         prune_window : tuple, optional
             Manually-set pruning window. Default is None.
         outlier_downsampling : float, optional
@@ -80,6 +90,8 @@ class Spextractor:
             self._prune(prune_window)
         elif auto_prune:
             self._auto_prune(auto_prune_excess)
+
+        self._deredden(H_EBV=host_EBV, H_RV=host_RV, MW_EBV=MW_EBV, MW_RV=MW_RV)
 
         self._normalize = normalize
         self.fmax_in = self.flux.max()
@@ -390,6 +402,16 @@ class Spextractor:
 
         if np.any(self.flux_err):
             self.flux_err /= max_flux
+
+    def _deredden(self, H_EBV=None, H_RV=None, MW_EBV=None, MW_RV=3.1):
+        """Correct for MW and Host extinction."""
+        # MW extinction
+        if MW_EBV is not None and MW_EBV != 0. and MW_RV is not None:
+            self.flux, _a, _b = unred(self.wave, self.flux, MW_EBV, R_V=MW_RV)
+
+        # Host extinction
+        if H_EBV is not None and H_EBV != 0. and H_RV is not None:
+            self.flux, _a, _b = unred(self.wave, self.flux, H_EBV, R_V=H_RV)
 
     def _remove_zeroes(self):
         """Remove zero-flux values."""
