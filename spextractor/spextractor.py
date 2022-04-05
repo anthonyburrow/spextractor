@@ -16,8 +16,8 @@ class Spextractor:
 
     def __init__(self, data, z=None, sn_type='Ia', manual_range=False,
                  remove_zeroes=True, auto_prune=True, auto_prune_excess=250.,
-                 host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,
-                 prune_window=None, outlier_downsampling=20., normalize=True,
+                 prune_window=None, host_EBV=None, host_RV=None, MW_EBV=None,
+                 MW_RV=3.1, outlier_downsampling=20., normalize=True,
                  verbose=False):
         """Constructor for the Spextractor class.
 
@@ -44,6 +44,8 @@ class Spextractor:
         auto_prune_excess : float, optional
             A buffer (in Angstroms) to each side of the auto-pruning window.
             This is 250. by default.
+        prune_window : tuple, optional
+            Manually-set pruning window. Default is None.
         host_EBV : float, optional
             Host galaxy color excess used for dereddening.
         host_RV : float, optional
@@ -52,8 +54,6 @@ class Spextractor:
             MW galaxy color excess used for dereddening.
         MW_RV : float, optional
             MW reddening vector used for dereddening. Default is 3.1.
-        prune_window : tuple, optional
-            Manually-set pruning window. Default is None.
         outlier_downsampling : float, optional
             Downsampling factor if outliers are removed from the GPR training
             set. This is meant to be relatively large for quickly performing
@@ -108,10 +108,6 @@ class Spextractor:
         self.pew_err = {}
         self.vel = {}
         self.vel_err = {}
-        self.lambda_hv = {}
-        self.lambda_hv_err = {}
-        self.vel_hv = {}
-        self.vel_hv_err = {}
         self.depth = {}
         self.depth_err = {}
 
@@ -201,8 +197,7 @@ class Spextractor:
         """
         return gpr.predict(X_pred, self.model, self.kernel)
 
-    def process(self, features=None, plot=False, predict_res=2000,
-                high_velocity=False, hv_clustering_method='meanshift'):
+    def process(self, features=None, plot=False, predict_res=2000):
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
 
@@ -212,11 +207,6 @@ class Spextractor:
             Iterable containing strings of features of which to calculate
             properties. These must be included in "./physics/lines.py". By
             default, every feature in "lines.py" is processed.
-        high_velocity : bool, optional
-            Calculate based on high-velocity properties. Default is False.
-        hv_clustering_method : str, optional
-            Clustering method for high-velocity calculations. Can be 'dbscan'
-            or 'meanshift'. Default is 'meanshift'.
         plot : bool, optional
             Create a plot of data, model, and spectral features. Default is
             False.
@@ -234,7 +224,7 @@ class Spextractor:
             self._setup_plot(gpr_wave_pred, gpr_mean, gpr_sigma)
 
         if features is None:
-            features = self._features
+            features = self._features.keys()
 
         for _feature in features:
             # Get feature slice
@@ -247,11 +237,6 @@ class Spextractor:
 
             # If the feature isn't contained in the spectrum
             if not (np.any(lo_mask) and np.any(hi_mask)):
-                if high_velocity:
-                    self.lambda_hv[_feature] = []
-                    self.lambda_hv_err[_feature] = []
-                    self.vel_hv[_feature] = []
-                    self.vel_hv_err[_feature] = []
                 self.vel[_feature] = np.nan
                 self.vel_err[_feature] = np.nan
                 self.pew[_feature] = np.nan
@@ -270,17 +255,6 @@ class Spextractor:
             feat_err = np.sqrt(gpr_variance[mask])
 
             # Velocity calculation
-            if high_velocity:
-                lam_hv, lam_err_hv, vel_hv, vel_err_hv = \
-                    feature.velocity_high(feat_wave, feat_mean, rest_wave,
-                                          self._model, self.kernel,
-                                          hv_clustering_method)
-
-                self.lambda_hv[_feature] = lam_hv
-                self.lambda_hv_err[_feature] = lam_err_hv
-                self.vel_hv[_feature] = vel_hv
-                self.vel_hv_err[_feature] = vel_err_hv
-
             vel, vel_err = feature.velocity(feat_wave, feat_mean, rest_wave,
                                             self._model, self.kernel)
 

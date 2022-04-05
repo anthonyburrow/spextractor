@@ -1,7 +1,6 @@
 import numpy as np
 from scipy.integrate import trapz
 from scipy import signal
-from sklearn.cluster import DBSCAN, MeanShift
 
 from . import doppler
 from ..math import interpolate
@@ -33,66 +32,6 @@ def velocity(wave, flux, lam0, model, kernel, n_samples=100):
     vel, vel_err = doppler.velocity(lam_min, lam_min_err, lam0)
 
     return vel, vel_err
-
-
-def velocity_high(wave, flux, lam0, model, kernel, method='MeanShift',
-                  n_samples=100):
-    method = method.lower()
-    methods = ('dbscan', 'meanshift')
-    assert method in ('dbscan', 'meanshift'), \
-        f'Invalid method "{method}"; valid are {methods}'
-
-    min_index = flux.argmin()
-
-    # If feature not clearly found
-    if min_index == 0 or min_index == flux.shape[0] - 1:
-        return [], [], np.nan, np.nan, [], []
-
-    # To estimate the error, sample possible spectra from the posterior
-    # and find the minima.
-    samples = model.posterior_samples_f(wave[:, np.newaxis], n_samples,
-                                        kern=kernel.copy())
-    samples = samples.squeeze()
-
-    minima_samples = []
-    for i in range(samples.shape[1]):
-        positions = signal.argrelmin(samples[:, i], order=10)[0]
-        minima_samples.extend(positions)
-
-    minima_samples = np.array(minima_samples)[:, np.newaxis]
-
-    if method == 'dbscan':
-        labels = DBSCAN(eps=1).fit_predict(minima_samples)
-    elif method == 'meanshift':
-        labels = MeanShift(10).fit_predict(minima_samples)
-
-    lambdas = []
-    lambdas_err = []
-    vel_hv = []
-    vel_hv_err = []
-
-    for x in np.unique(labels):
-        if x == -1:
-            # This is the "noise" label in DBSCAN
-            continue
-
-        matching = labels == x
-        if matching.sum() < 5:
-            # This is just noise
-            continue
-
-        min_index = minima_samples[matching]
-        lam_min = np.mean(wave[min_index])
-        lam_min_err = np.std(wave[min_index])
-
-        lambdas.append(lam_min)
-        lambdas_err.append(lam_min_err)
-
-        vel, vel_err = doppler.velocity(lam_min, lam_min_err, lam0)
-        vel_hv.append(vel)
-        vel_hv_err.append(vel_err)
-
-    return lambdas, lambdas_err, vel_hv, vel_hv_err
 
 
 def pEW(wave, flux):
