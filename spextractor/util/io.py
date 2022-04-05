@@ -92,7 +92,7 @@ def _load_fits(filename):
 
     flux_err = np.zeros(len(flux))
 
-    return wavel, flux, flux_err
+    return np.c_[wavel, flux, flux_err]
 
 
 def _load_other(filename):
@@ -112,19 +112,4 @@ def _load_other(filename):
             print(prev.message, e.message, filename)
             raise e
 
-    nan_mask = ~np.isnan(data).any(axis=1)
-    data = data[nan_mask]
-
-    wavel = data[:, 0]
-    flux = data[:, 1]
-
-    try:
-        flux_err = data[:, 2]
-    except IndexError:
-        print('No flux uncertainties found while reading file')
-        flux_err = np.zeros(len(flux))
-
-    if np.all(isna(flux_err)):
-        flux_err = np.zeros(len(flux_err))
-
-    return wavel, flux, flux_err
+    return data

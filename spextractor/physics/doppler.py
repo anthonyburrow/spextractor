@@ -1,12 +1,14 @@
 c = 299.792458   # 10^3 km/s
 
 
-def deredshift(wave, z=None):
+def deredshift(data, z=None, *args, **kwargs):
     """De-redshift wavelength values."""
     if z is None:
-        return wave
+        return data
 
-    return wave / (z + 1.)
+    data[:, 0] /= (z + 1.)
+
+    return data
 
 
 def velocity(lam, lam_err, lam0):

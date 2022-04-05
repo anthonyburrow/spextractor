@@ -1,12 +1,11 @@
 import numpy as np
 import time
 
-from snpy.utils.deredden import unred
-
 from .util.io import load_spectra
+from .util.preprocessing import preprocess
 from .util.log import setup_log
 from .util.manual import ManualRange
-from .physics import doppler, feature
+from .physics import feature
 from .physics.lines import get_features
 from .physics.downsample import downsample
 from .math import interpolate, gpr
@@ -15,7 +14,7 @@ from .math import interpolate, gpr
 class Spextractor:
 
     def __init__(self, data, z=None, sn_type='Ia', manual_range=False,
-                 remove_zeroes=True, auto_prune=True, auto_prune_excess=250.,
+                 remove_zeroes=True, auto_prune=False, auto_prune_excess=250.,
                  prune_window=None, host_EBV=None, host_RV=None, MW_EBV=None,
                  MW_RV=3.1, outlier_downsampling=20., normalize=True,
                  verbose=False):
@@ -40,7 +39,7 @@ class Spextractor:
             set.
         auto_prune : bool, optional
             Uninclude data points outside of the minimum/maximum feature ranges
-            specified in "./physics/lines.py".
+            specified in "./physics/lines.py". Default is False.
         auto_prune_excess : float, optional
             A buffer (in Angstroms) to each side of the auto-pruning window.
             This is 250. by default.
@@ -70,12 +69,6 @@ class Spextractor:
             log_fn = f'{data.rsplit(".", 1)[0]:s}.log'
         self._logger = setup_log(log_fn, verbose)
 
-        self.wave, self.flux, self.flux_err = self._setup_data(data)
-        self.wave = doppler.deredshift(self.wave, z=z)
-
-        if remove_zeroes:
-            self._remove_zeroes()
-
         if isinstance(sn_type, str):
             self._features = get_features(sn_type)
         else:
@@ -86,12 +79,13 @@ class Spextractor:
             m = ManualRange(self.wave, self.flux, self._features, self._logger)
             self._features = m.def_lines
 
-        if prune_window is not None:
-            self._prune(prune_window)
-        elif auto_prune:
-            self._auto_prune(auto_prune_excess)
+        if auto_prune:
+            prune_window = self._get_auto_prune_window(auto_prune_excess)
 
-        self._deredden(H_EBV=host_EBV, H_RV=host_RV, MW_EBV=MW_EBV, MW_RV=MW_RV)
+        self.wave, self.flux, self.flux_err = \
+            self._setup_data(data, z=z, wave_range=prune_window,
+                             H_EBV=host_EBV, H_RV=host_RV,
+                             MW_EBV=MW_EBV, MW_RV=MW_RV)
 
         self._normalize = normalize
         self.fmax_in = self.flux.max()
@@ -346,23 +340,22 @@ class Spextractor:
 
         return self._fig, self._ax
 
-    def _setup_data(self, data):
+    def _setup_data(self, data, *args, **kwargs):
         """Set up flux (with uncertainty) and wavelength data."""
         if isinstance(data, str):
             self._logger.info(f'Loading data from {data:s}\n')
-            return load_spectra(data)
+            data = load_spectra(data)
 
-        nan_mask = ~np.isnan(data).any(axis=1)
-        data = data[nan_mask]
+        data = preprocess(data, *args, **kwargs)
 
         wave = data[:, 0]
         flux = data[:, 1]
         try:
             flux_err = data[:, 2]
         except IndexError:
-            msg = 'No flux uncertainties found while reading file.'
+            msg = 'No flux uncertainties found.'
             self._logger.info(msg)
-            flux_err = np.zeros(len(flux))
+            flux_err = np.zeros_like(flux)
 
         return wave, flux, flux_err
 
@@ -377,24 +370,7 @@ class Spextractor:
         if np.any(self.flux_err):
             self.flux_err /= max_flux
 
-    def _deredden(self, H_EBV=None, H_RV=None, MW_EBV=None, MW_RV=3.1):
-        """Correct for MW and Host extinction."""
-        # MW extinction
-        if MW_EBV is not None and MW_EBV != 0. and MW_RV is not None:
-            self.flux, _a, _b = unred(self.wave, self.flux, MW_EBV, R_V=MW_RV)
-
-        # Host extinction
-        if H_EBV is not None and H_EBV != 0. and H_RV is not None:
-            self.flux, _a, _b = unred(self.wave, self.flux, H_EBV, R_V=H_RV)
-
-    def _remove_zeroes(self):
-        """Remove zero-flux values."""
-        mask = self.flux != 0
-        self.wave = self.wave[mask]
-        self.flux_err = self.flux_err[mask]
-        self.flux = self.flux[mask]
-
-    def _auto_prune(self, prune_excess):
+    def _get_auto_prune_window(self, prune_excess):
         """Remove data outside feature range (for less computation)."""
         wav_min = min(self._features[li]['lo_range'][0] for li in self._features)
         wav_max = max(self._features[li]['hi_range'][1] for li in self._features)
