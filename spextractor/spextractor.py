@@ -191,14 +191,15 @@ class Spextractor:
         """
         return gpr.predict(X_pred, self.model, self.kernel)
 
-    def process(self, features=None, plot=False, predict_res=2000):
+    def process(self, features=None, plot=False, predict_res=2000,
+                hv_features=None, high_velocity=True):
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
 
         Parameters
         ----------
-        features : list, optional
-            Iterable containing strings of features of which to calculate
+        features : tuple, optional
+            Iterable containing strings of features for which to calculate
             properties. These must be included in "./physics/lines.py". By
             default, every feature in "lines.py" is processed.
         plot : bool, optional
@@ -207,6 +208,13 @@ class Spextractor:
         predict_res : int, optional
             Sample size (resolution) of prediction values predicted by GPR
             model.
+        hv_features : tuple, optional
+            Tuple of feature strings for which to use high-velocity wavelength
+            ranges.
+        high_velocity : bool, optional
+            Use high-velocity wavelength ranges for features provided in
+            hv_features. This is mostly used as a convenient toggle. Default
+            is True.
         """
         t0 = time.time()
 
@@ -218,18 +226,31 @@ class Spextractor:
             self._setup_plot(gpr_wave_pred, gpr_mean, gpr_sigma)
 
         if features is None:
-            features = self._features.keys()
+            features = self._features
+
+        if hv_features is None:
+            hv_features = []
 
         for _feature in features:
             # Get feature slice
             rest_wave = self._features[_feature]['rest']
+
             lo_range = self._features[_feature]['lo_range']
             hi_range = self._features[_feature]['hi_range']
+            if high_velocity and _feature in hv_features:
+                try:
+                    lo_range = self._features[_feature]['lo_range_hv']
+                    hi_range = self._features[_feature]['hi_range_hv']
+                except KeyError:
+                    msg = f'{_feature} does not have defined HV wavelengths'
+                    self._logger.warning(msg)
+
+            print(lo_range, hi_range)
 
             lo_mask = (lo_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= lo_range[1])
             hi_mask = (hi_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= hi_range[1])
 
-            # If the feature isn't contained in the spectrum
+            # If the feature isn't recognized in the spectrum
             if not (np.any(lo_mask) and np.any(hi_mask)):
                 self.vel[_feature] = np.nan
                 self.vel_err[_feature] = np.nan

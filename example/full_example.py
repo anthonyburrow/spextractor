@@ -44,9 +44,12 @@ Do feature calculations (velocity, pEW, depth, etc.).
   such that each feature has an associated velocity, pEW, etc..
 - Controls whether a plot is created during this process.
 '''
+si = 'Si II 6150A'
 spex.process(plot=True)
 
-si = 'Si II 6150A'
+# Or you can specify high-velocity features that are defined in "lines.py"
+# spex.process(plot=True, hv_features=(si, ))
+
 vsi = spex.vel[si]
 vsi_err = spex.vel_err[si]
 print(f'vsi = {vsi:.3f} +- {vsi_err:.3f}')
