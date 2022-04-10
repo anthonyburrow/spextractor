@@ -49,7 +49,6 @@ def deredden(data, host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,
 
     # Milky Way extinction
     if MW_EBV is not None and MW_EBV != 0. and MW_RV is not None:
-        print(f'test {MW_EBV}')
         data[:, 1], _a, _b = unred(data[:, 0], data[:, 1], MW_EBV, R_V=MW_RV)
 
     # Host extinction
