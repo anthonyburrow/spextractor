@@ -84,7 +84,7 @@ class Spextractor:
 
         self.wave, self.flux, self.flux_err = \
             self._setup_data(data, z=z, wave_range=prune_window,
-                             H_EBV=host_EBV, H_RV=host_RV,
+                             host_EBV=host_EBV, host_RV=host_RV,
                              MW_EBV=MW_EBV, MW_RV=MW_RV)
 
         self._normalize = normalize

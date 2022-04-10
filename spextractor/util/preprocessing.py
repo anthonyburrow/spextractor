@@ -41,7 +41,7 @@ def prune(data, wave_range=None, *args, **kwargs):
     return data[mask]
 
 
-def deredden(data, H_EBV=None, H_RV=None, MW_EBV=None, MW_RV=3.1,
+def deredden(data, host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,
              *args, **kwargs):
     """Correct for extinction."""
     if not _can_deredden:
@@ -49,10 +49,11 @@ def deredden(data, H_EBV=None, H_RV=None, MW_EBV=None, MW_RV=3.1,
 
     # Milky Way extinction
     if MW_EBV is not None and MW_EBV != 0. and MW_RV is not None:
+        print(f'test {MW_EBV}')
         data[:, 1], _a, _b = unred(data[:, 0], data[:, 1], MW_EBV, R_V=MW_RV)
 
     # Host extinction
-    if H_EBV is not None and H_EBV != 0. and H_RV is not None:
-        data[:, 1], _a, _b = unred(data[:, 0], data[:, 1], H_EBV, R_V=H_RV)
+    if host_EBV is not None and host_EBV != 0. and host_RV is not None:
+        data[:, 1], _a, _b = unred(data[:, 0], data[:, 1], host_EBV, R_V=host_RV)
 
     return data
