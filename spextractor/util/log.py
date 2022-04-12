@@ -2,14 +2,17 @@ import logging
 import os.path
 
 
+_log_dir = './log'
+
+
 def setup_log(filename, verbose=True):
-    if not os.path.exists('./log/'):
-        os.makedirs('./log/')
+    if not os.path.exists(_log_dir):
+        os.makedirs(_log_dir)
 
     if filename is None:
         index = 0
         while True:
-            filename = './log/sn%i.log' % index
+            filename = f'{_log_dir}/sn{index}.log'
             if os.path.isfile(filename):
                 index += 1
                 continue
@@ -17,24 +20,28 @@ def setup_log(filename, verbose=True):
 
     # Root logger
     logging.basicConfig(format='')
-    root = logging.getLogger('SPEXTRACTOR')
-    root.setLevel(logging.INFO)
-    root.propagate = False
+    logger = logging.getLogger('SPEXTRACTOR')
+    logger.setLevel(logging.INFO)
+    logger.propagate = False
 
     formatter = logging.Formatter('%(levelname)s: %(message)s')
 
+    logger.handlers = []
+
     # File handler
-    filename = './log/%s' % os.path.basename(filename)
+    filename = f'{_log_dir}/{os.path.basename(filename)}'
     fh = logging.FileHandler(filename, mode='w')
     fh.setFormatter(formatter)
     fh.setLevel(logging.INFO)
-    root.addHandler(fh)
+    logger.addHandler(fh)
 
     # Console handler
-    if verbose:
-        ch = logging.StreamHandler()
-        ch.setFormatter(formatter)
-        ch.setLevel(logging.INFO)
-        root.addHandler(ch)
+    if not verbose:
+        return logger
 
-    return root
+    ch = logging.StreamHandler()
+    ch.setFormatter(formatter)
+    ch.setLevel(logging.INFO)
+    logger.addHandler(ch)
+
+    return logger
