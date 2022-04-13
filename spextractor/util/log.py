@@ -5,7 +5,7 @@ import os.path
 _log_dir = './log'
 
 
-def setup_log(filename, verbose=True):
+def setup_log(filename, verbose=False, *args, **kwargs):
     if not os.path.exists(_log_dir):
         os.makedirs(_log_dir)
 

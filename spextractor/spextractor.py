@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib.pyplot as plt
 import time
 
 from .util.io import load_spectra
@@ -13,11 +14,8 @@ from .math import interpolate, gpr
 
 class Spextractor:
 
-    def __init__(self, data, z=None, sn_type='Ia', manual_range=False,
-                 remove_zeroes=True, auto_prune=False, auto_prune_excess=250.,
-                 prune_window=None, host_EBV=None, host_RV=None, MW_EBV=None,
-                 MW_RV=3.1, outlier_downsampling=20., normalize=True,
-                 verbose=False):
+    def __init__(self, data, sn_type=None, manual_range=False,
+                 outlier_downsampling=20., normalize=True, *args, **kwargs):
         """Constructor for the Spextractor class.
 
         Parameters
@@ -25,34 +23,13 @@ class Spextractor:
         data : str, numpy.ndarray
             Spectral data (can be unnormalized) where columns are wavelengths
             (Angstroms), flux, and flux uncertainty.
-        z : float, optional
-            Redshift value for rest-frame wavelength correction.
         sn_type : str, optional
-            Type of SN. This is 'Ia', 'Ib', or 'Ic', unless changes are made in
-            "./physics/lines.py". The default ('Ia') may be kept if not working
-            with SNe and just doing downsampling or GPR fitting.
+            Type of SN, used to determine which features are able to be
+            processed. This must be a key in "./physics/lines.py" ('Ia', 'Ib',
+            or 'Ic'). If None, 'Ia' is used by default.
         manual_range : bool, optional
             Used for manually setting feature minimum/maximum ranges via a
             spectrum plot. False by default.
-        remove_zeroes : bool, optional
-            Completely remove data points with flux equal to 0. in the data
-            set.
-        auto_prune : bool, optional
-            Uninclude data points outside of the minimum/maximum feature ranges
-            specified in "./physics/lines.py". Default is False.
-        auto_prune_excess : float, optional
-            A buffer (in Angstroms) to each side of the auto-pruning window.
-            This is 250. by default.
-        prune_window : tuple, optional
-            Manually-set pruning window. Default is None.
-        host_EBV : float, optional
-            Host galaxy color excess used for dereddening.
-        host_RV : float, optional
-            Host reddening vector used for dereddening.
-        MW_EBV : float, optional
-            MW galaxy color excess used for dereddening.
-        MW_RV : float, optional
-            MW reddening vector used for dereddening. Default is 3.1.
         outlier_downsampling : float, optional
             Downsampling factor if outliers are removed from the GPR training
             set. This is meant to be relatively large for quickly performing
@@ -61,31 +38,42 @@ class Spextractor:
             Determines whether the spectrum should be normalized by maximum
             flux. Default is True (recommended, as GPR will not work well
             otherwise).
-        verbose : bool, optional
-            Display output on console.
+
+        **kwargs
+            z : float, optional
+                Redshift value for rest-frame wavelength correction.
+            wave_range : tuple, optional
+                Manually-set pruning window in Angstroms. Default is None.
+            remove_zeroes : bool, optional
+                Completely remove data points with flux equal to 0 in the data
+                set.
+            host_EBV : float, optional
+                Host galaxy color excess used for dereddening.
+            host_RV : float, optional
+                Host reddening vector used for dereddening.
+            MW_EBV : float, optional
+                MW galaxy color excess used for dereddening.
+            MW_RV : float, optional
+                MW reddening vector used for dereddening. Default is 3.1.
+            verbose : bool, optional
+                Display output on console. Default is False.
         """
         log_fn = None
         if isinstance(data, str):
             log_fn = f'{data.rsplit(".", 1)[0]:s}.log'
-        self._logger = setup_log(log_fn, verbose)
+        self._logger = setup_log(log_fn, *args, **kwargs)
 
-        if isinstance(sn_type, str):
-            self._features = get_features(sn_type)
-        else:
-            self._features = sn_type
+        if sn_type is None:
+            sn_type = 'Ia'
+        self._features = get_features(sn_type)
 
         if manual_range:
             self._logger.info('Manually changing feature bounds...')
             m = ManualRange(self.wave, self.flux, self._features, self._logger)
             self._features = m.def_lines
 
-        if auto_prune:
-            prune_window = self._get_auto_prune_window(auto_prune_excess)
-
         self.wave, self.flux, self.flux_err = \
-            self._setup_data(data, z=z, wave_range=prune_window,
-                             host_EBV=host_EBV, host_RV=host_RV,
-                             MW_EBV=MW_EBV, MW_RV=MW_RV)
+            self._setup_data(data, *args, **kwargs)
 
         self._normalize = normalize
         self.fmax_in = self.flux.max()
@@ -232,7 +220,6 @@ class Spextractor:
             hv_features = []
 
         for _feature in features:
-            # Get feature slice
             rest_wave = self._features[_feature]['rest']
 
             lo_range = self._features[_feature]['lo_range']
@@ -244,8 +231,6 @@ class Spextractor:
                 except KeyError:
                     msg = f'{_feature} does not have defined HV wavelengths'
                     self._logger.warning(msg)
-
-            print(lo_range, hi_range)
 
             lo_mask = (lo_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= lo_range[1])
             hi_mask = (hi_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= hi_range[1])
@@ -391,24 +376,6 @@ class Spextractor:
         if np.any(self.flux_err):
             self.flux_err /= max_flux
 
-    def _get_auto_prune_window(self, prune_excess):
-        """Remove data outside feature range (for less computation)."""
-        wav_min = min(self._features[li]['lo_range'][0] for li in self._features)
-        wav_max = max(self._features[li]['hi_range'][1] for li in self._features)
-
-        wav_min -= prune_excess
-        wav_max += prune_excess
-
-        wave_range = wav_min, wav_max
-        self._prune(wave_range)
-
-    def _prune(self, wave_range):
-        mask = (wave_range[0] <= self.wave) & (self.wave <= wave_range[1])
-
-        self.flux = self.flux[mask]
-        self.flux_err = self.flux_err[mask]
-        self.wave = self.wave[mask]
-
     def _filter_outliers(self, sigma_outliers, downsample_method):
         """Attempt to remove sharp lines (teluric, cosmic rays...).
 
@@ -437,27 +404,27 @@ class Spextractor:
 
     def _downsample(self, downsampling, downsample_method):
         """Handle downsampling."""
-        n_flux_data = len(self.flux)
+        n_points = len(self.flux)
         sample_limit = 5000   # Depends on Python memory limits
-        if n_flux_data / downsampling > sample_limit:
-            downsampling = n_flux_data / sample_limit + 0.1
+
+        if n_points / downsampling > sample_limit:
+            downsampling = n_points / sample_limit + 0.1
             msg = (f'Flux array is too large for memory. Downsampling '
                    f'factor increased to {downsampling:.3f}')
             self._logger.warning(msg)
+
         self.wave, self.flux, self.flux_err = \
             downsample(self.wave, self.flux, self.flux_err,
                        binning=downsampling, method=downsample_method)
 
-        msg = (f'Downsampled from {n_flux_data} points with factor of '
-               f'{downsampling:.2f}.\n')
+        msg = (f'Downsampled from {n_points} to {len(self.flux)} points '
+               f'with a factor of {downsampling:.2f}.\n')
         self._logger.info(msg)
 
     def _setup_plot(self, gpr_w, gpr_f, gpr_fe):
         """Setup the spectrum plot."""
         if self._fig is not None:
             return
-
-        import matplotlib.pyplot as plt
 
         self._fig, self._ax = plt.subplots()
 

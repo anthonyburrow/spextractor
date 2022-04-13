@@ -12,7 +12,7 @@ except ModuleNotFoundError:
 
 def preprocess(data, *args, **kwargs):
     data = remove_nan(data)
-    data = remove_zeros(data)
+    data = remove_zeros(data, *args, **kwargs)
 
     data = deredshift(data, *args, **kwargs)
     data = prune(data, *args, **kwargs)
@@ -27,8 +27,11 @@ def remove_nan(data):
     return data[nan_mask]
 
 
-def remove_zeros(data):
+def remove_zeros(data, remove_zeros=True, *args, **kwargs):
     """Remove zero-flux values."""
+    if not remove_zeros:
+        return data
+
     mask = data[:, 1] != 0.
     return data[mask]
 
