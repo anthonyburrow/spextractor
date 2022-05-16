@@ -15,7 +15,8 @@ from .math import interpolate, gpr
 class Spextractor:
 
     def __init__(self, data, sn_type=None, manual_range=False,
-                 outlier_downsampling=20., normalize=True, *args, **kwargs):
+                 outlier_downsampling=20., normalize=True, plot=False,
+                 *args, **kwargs):
         """Constructor for the Spextractor class.
 
         Parameters
@@ -38,6 +39,9 @@ class Spextractor:
             Determines whether the spectrum should be normalized by maximum
             flux. Default is True (recommended, as GPR will not work well
             otherwise).
+        plot : bool, optional
+            Create and hold a plot of the data, GPR, and velocity/pEW
+            information that may be calculated. False by default.
 
         **kwargs
             z : float, optional
@@ -65,6 +69,11 @@ class Spextractor:
 
         self.data = self._setup_data(data, *args, **kwargs)
 
+        # Setup primary plot of (processed but unnormalized) data
+        self._plot = plot
+        self._fig, self._ax = None, None
+
+        # Scale data
         self._normalize = normalize
         self.fmax_in = self.flux.max()
         self.fmax_out = self.fmax_in
@@ -92,8 +101,6 @@ class Spextractor:
         self.vel_err = {}
         self.depth = {}
         self.depth_err = {}
-
-        self._fig, self._ax = None, None
 
     def create_model(self, sigma_outliers=3., downsample_method='weighted',
                      downsampling=None, model_uncertainty=True,
@@ -155,6 +162,9 @@ class Spextractor:
         self._model = model
         self.kernel = kern
 
+        if self._plot:
+            self._setup_plot()
+
         return model
 
     def reset_model(self):
@@ -176,10 +186,18 @@ class Spextractor:
             A tuple consisting of the mean and variance values calculated at
             each of the prediction points.
         """
-        return gpr.predict(X_pred, self.model, self.kernel)
+        mean, var = gpr.predict(X_pred, self.model, self.kernel)
+        err = np.sqrt(var)
 
-    def process(self, features=None, plot=False, predict_res=2000,
-                hv_features=None, high_velocity=True):
+        if self._plot:
+            self._ax.plot(X_pred, mean, color='red', zorder=2, lw=1)
+            self._ax.fill_between(X_pred, mean - err, mean + err,
+                                  alpha=0.3, color='red', zorder=1)
+
+        return mean, var
+
+    def process(self, features=None, predict_res=2000, hv_features=None,
+                high_velocity=True):
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
 
@@ -189,9 +207,6 @@ class Spextractor:
             Iterable containing strings of features for which to calculate
             properties. These must be included in "./physics/lines.py". By
             default, every feature in "lines.py" is processed.
-        plot : bool, optional
-            Create a plot of data, model, and spectral features. Default is
-            False.
         predict_res : int, optional
             Sample size (resolution) of prediction values predicted by GPR
             model.
@@ -207,10 +222,6 @@ class Spextractor:
 
         gpr_wave_pred = np.linspace(self.wave[0], self.wave[-1], predict_res)
         gpr_mean, gpr_variance = self.predict(gpr_wave_pred)
-        gpr_sigma = np.sqrt(gpr_variance)
-
-        if plot:
-            self._setup_plot(gpr_wave_pred, gpr_mean, gpr_sigma)
 
         if features is None:
             features = self._features
@@ -268,7 +279,7 @@ class Spextractor:
                 self.depth_err[_feature] = np.nan
                 continue
 
-            if plot:
+            if self._plot:
                 min_ind = feat_data[:, 1].argmin()
                 lam_min = feat_data[min_ind, 0]
                 self._ax.axvline(lam_min, ymax=feat_data[:, 1].min(),
@@ -281,7 +292,7 @@ class Spextractor:
             self.pew[_feature] = pew
             self.pew_err[_feature] = pew_err
 
-            if plot:
+            if self._plot:
                 feat_range = feat_data[[0, -1]]
                 continuum, _ = interpolate.linear(feat_data[:, 0], feat_range)
 
@@ -349,12 +360,6 @@ class Spextractor:
 
     @property
     def plot(self):
-        if self._fig is None:
-            msg = ('Attempted to call plot property without processing with '
-                   '`plot=True`')
-            self._logger.error(msg)
-            return None, None
-
         return self._fig, self._ax
 
     def _setup_data(self, data, *args, **kwargs):
@@ -425,7 +430,7 @@ class Spextractor:
                f'with a factor of {downsampling:.2f}.\n')
         self._logger.info(msg)
 
-    def _setup_plot(self, gpr_w, gpr_f, gpr_fe):
+    def _setup_plot(self):
         """Setup the spectrum plot."""
         if self._fig is not None:
             return
@@ -441,7 +446,3 @@ class Spextractor:
         self._ax.fill_between(self.wave, self.flux - self.flux_err,
                               self.flux + self.flux_err, color='grey',
                               alpha=0.5, zorder=-1)
-
-        self._ax.plot(gpr_w, gpr_f, color='red', zorder=2, lw=1)
-        self._ax.fill_between(gpr_w, gpr_f - gpr_fe, gpr_f + gpr_fe,
-                              alpha=0.3, color='red', zorder=1)

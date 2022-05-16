@@ -24,7 +24,7 @@ Create the Spextractor instance.
   "spextractor/physics/lines.py".
 - Other parameters available (see constructor docstring).
 '''
-spex = Spextractor(fn, z=z)
+spex = Spextractor(fn, z=z, plot=True)
 
 '''
 Make specifications to the model and any downsampling that occurs beforehand.
@@ -45,7 +45,7 @@ Do feature calculations (velocity, pEW, depth, etc.).
 - Controls whether a plot is created during this process.
 '''
 si = 'Si II 6150A'
-spex.process(plot=True)
+spex.process()
 
 # Or you can specify high-velocity features that are defined in "lines.py"
 # spex.process(plot=True, hv_features=(si, ))
