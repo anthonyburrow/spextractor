@@ -383,12 +383,11 @@ class Spextractor:
         further than 'sigma_outliers' standard deviations.
 
         """
-        x, y, _ = downsample(self.wave, self.flux, self.flux_err,
-                             binning=self._outlier_ds_factor,
-                             method=downsample_method)
+        x, y, y_err = downsample(self.wave, self.flux, self.flux_err,
+                                 binning=self._outlier_ds_factor,
+                                 method=downsample_method)
 
-        model, kernel = gpr.model(x, y, y_err=None, optimize_noise=True,
-                                  logger=self._logger)
+        model, kernel = gpr.model(x, y, y_err=y_err, logger=self._logger)
         mean, var = gpr.predict(self.wave, model, kernel)
 
         sigma = np.sqrt(var)
