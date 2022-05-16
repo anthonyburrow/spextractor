@@ -3,9 +3,9 @@ import matplotlib.pyplot as plt
 
 class ManualRange:
 
-    def __init__(self, w, f, default_lines, logger):
-        self.w = w
-        self.f = f
+    def __init__(self, data, default_lines, logger):
+        self.w = data[:, 0]
+        self.f = data[:, 1]
         self.def_lines = default_lines
         self.logger = logger
 

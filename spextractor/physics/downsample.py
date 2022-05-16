@@ -2,73 +2,64 @@ import numpy as np
 from ..math import interpolate
 
 
-def downsample(wave, flux, flux_err, binning=1, method='weighted'):
+def downsample(data, binning=1., method='weighted'):
     if binning <= 1:
-        return wave, flux, flux_err
+        return data
 
     if method == 'weighted':
-        return _downsample_average(wave, flux, flux_err, binning)
+        return _downsample_average(data, binning)
     elif method == 'remove':
-        return _downsample_remove(wave, flux, flux_err, binning)
+        return _downsample_remove(data, binning)
 
 
-def _downsample_remove(wave, flux, flux_err, binning):
-    new_wavelength = wave[::binning]
-    new_flux = flux[::binning]
-    new_flux_err = flux_err[::binning]
-
-    return new_wavelength, new_flux, new_flux_err
+def _downsample_remove(data, binning):
+    return data[::binning]
 
 
-def _downsample_average(wave, flux, flux_err, binning):
-    n_points = wave.shape[0]
-    n_bins = int(np.around(n_points / binning))
-    endpoint_wave, bin_size = np.linspace(wave[0], wave[-1], n_bins + 1,
-                                          retstep=True)
+def _downsample_average(data, binning):
+    # wave = data[:, 0]
+    # flux = data[:, 1]
+    # flux_err = data[:, 2]
+    n_bins = int(np.around(len(data) / binning))
 
-    new_wavelength = 0.5 * (endpoint_wave[:-1] + endpoint_wave[1:])
+    endpoint_data = np.zeros((n_bins + 1, 3))
+    wave_0, wave_1 = data[0, 0], data[-1, 0]
+    endpoint_data[:, 0], bin_size = np.linspace(wave_0, wave_1, n_bins + 1,
+                                                retstep=True)
 
-    endpoint_flux, endpoint_flux_var = \
-        interpolate.linear(endpoint_wave, wave, flux, flux_err)
+    new_data = np.zeros((n_bins, 3))
+    new_data[:, 0] = 0.5 * (endpoint_data[:-1, 0] + endpoint_data[1:, 0])
 
-    new_flux = []
-    new_flux_var = []
+    endpoint_data[:, 1], endpoint_data[:, 2] = \
+        interpolate.linear(endpoint_data[:, 0], data)
+
     for i in range(n_bins):
         # Get values for individual bin
-        bin_mask = (endpoint_wave[i] < wave) & (wave < endpoint_wave[i + 1])
+        bin_mask = (endpoint_data[i, 0] < data[:, 0]) & \
+                   (data[:, 0] < endpoint_data[i + 1, 0])
+        bin_data = np.zeros((bin_mask.sum() + 2, 3))
 
-        bin_wave = np.zeros(bin_mask.sum() + 2)
-        bin_flux = np.zeros_like(bin_wave)
-        bin_flux_var = np.zeros_like(bin_wave)
-
-        bin_wave[[0, -1]] = endpoint_wave[i:i + 2]
-        bin_flux[[0, -1]] = endpoint_flux[i:i + 2]
-        bin_flux_var[[0, -1]] = endpoint_flux_var[i:i + 2]
-
-        bin_wave[1:-1] = wave[bin_mask]
-        bin_flux[1:-1] = flux[bin_mask]
-        bin_flux_var[1:-1] = flux_err[bin_mask]**2
+        bin_data[[0, -1]] = endpoint_data[i:i + 2]
+        bin_data[1:-1] = data[bin_mask]
+        bin_data[:, 2] **= 2.
 
         # Get flux/flux error associated with integrated flux
+        bin_wave = bin_data[:, 0]
+        bin_flux = bin_data[:, 1]
+        bin_flux_var = bin_data[:, 2]
+
         dlam = bin_wave[1:] - bin_wave[:-1]
         lamF = bin_wave * bin_flux
         lamF_var = bin_wave**2 * bin_flux_var
 
         flux_terms = dlam * (lamF[:-1] + lamF[1:])
-        int_flux = 0.5 * flux_terms.sum()
-        new_flux.append(int_flux)
+        new_data[i, 1] = 0.5 * flux_terms.sum()
 
         var_terms = dlam**2 * (lamF_var[:-1] + lamF_var[1:])
-        int_var = 0.25 * var_terms.sum()
-        new_flux_var.append(int_var)
+        new_data[i, 2] = 0.25 * var_terms.sum()
 
-    new_flux = np.array(new_flux)
-    new_flux_var = np.array(new_flux_var)
+    lam_dlam = new_data[:, 0] * bin_size
+    new_data[:, 1] /= lam_dlam
+    new_data[:, 2] = np.sqrt(new_data[:, 2]) / lam_dlam
 
-    lam_dlam = new_wavelength * bin_size
-    new_flux /= lam_dlam
-    new_flux_err = np.sqrt(new_flux_var) / lam_dlam
-
-    # Filter for flux = np.nan?
-
-    return new_wavelength, new_flux, new_flux_err
+    return new_data

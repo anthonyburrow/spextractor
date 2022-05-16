@@ -63,22 +63,22 @@ class Spextractor:
             log_fn = f'{data.rsplit(".", 1)[0]:s}.log'
         self._logger = setup_log(log_fn, *args, **kwargs)
 
+        self.data = self._setup_data(data, *args, **kwargs)
+
+        self._normalize = normalize
+        self.fmax_in = self.flux.max()
+        self.fmax_out = self.fmax_in
+        self._normalize_flux()
+
+        # Define features
         if sn_type is None:
             sn_type = 'Ia'
         self._features = get_features(sn_type)
 
         if manual_range:
             self._logger.info('Manually changing feature bounds...')
-            m = ManualRange(self.wave, self.flux, self._features, self._logger)
+            m = ManualRange(self.data, self._features, self._logger)
             self._features = m.def_lines
-
-        self.wave, self.flux, self.flux_err = \
-            self._setup_data(data, *args, **kwargs)
-
-        self._normalize = normalize
-        self.fmax_in = self.flux.max()
-        self.fmax_out = self.fmax_in
-        self._normalize_flux()
 
         self._outlier_ds_factor = outlier_downsampling
 
@@ -149,8 +149,7 @@ class Spextractor:
         if model_uncertainty:
             y_err = self.flux_err
 
-        model, kern = gpr.model(self.wave, self.flux, y_err=y_err,
-                                optimize_noise=optimize_noise,
+        model, kern = gpr.model(self.data, optimize_noise=optimize_noise,
                                 logger=self._logger)
 
         self._model = model
@@ -305,6 +304,18 @@ class Spextractor:
         self._logger.handlers = []   # Close log handlers between instantiations
 
     @property
+    def wave(self):
+        return self.data[:, 0]
+
+    @property
+    def flux(self):
+        return self.data[:, 1]
+
+    @property
+    def flux_err(self):
+        return self.data[:, 2]
+
+    @property
     def model(self):
         if self._model is None:
             msg = ('Attempted to use model without generating first. '
@@ -354,16 +365,14 @@ class Spextractor:
 
         data = preprocess(data, *args, **kwargs)
 
-        wave = data[:, 0]
-        flux = data[:, 1]
-        try:
-            flux_err = data[:, 2]
-        except IndexError:
+        if data.shape[1] < 3:
             msg = 'No flux uncertainties found.'
             self._logger.info(msg)
-            flux_err = np.zeros_like(flux)
 
-        return wave, flux, flux_err
+            flux_err = np.zeros(len(data))
+            data = np.c_[data, flux_err]
+
+        return data
 
     def _normalize_flux(self):
         """Normalize the flux."""
@@ -371,10 +380,10 @@ class Spextractor:
             return
 
         max_flux = self.flux.max()
-        self.flux /= max_flux
+        self.data[:, 1] /= max_flux
 
         if np.any(self.flux_err):
-            self.flux_err /= max_flux
+            self.data[:, 2] /= max_flux
 
     def _filter_outliers(self, sigma_outliers, downsample_method):
         """Attempt to remove sharp lines (teluric, cosmic rays...).
@@ -383,19 +392,16 @@ class Spextractor:
         further than 'sigma_outliers' standard deviations.
 
         """
-        x, y, y_err = downsample(self.wave, self.flux, self.flux_err,
-                                 binning=self._outlier_ds_factor,
-                                 method=downsample_method)
+        ds_data = downsample(self.data, binning=self._outlier_ds_factor,
+                             method=downsample_method)
 
-        model, kernel = gpr.model(x, y, y_err=y_err, logger=self._logger)
+        model, kernel = gpr.model(ds_data, logger=self._logger)
         mean, var = gpr.predict(self.wave, model, kernel)
 
         sigma = np.sqrt(var)
         valid = np.abs(self.flux - mean) < sigma_outliers * sigma
 
-        self.wave = self.wave[valid]
-        self.flux = self.flux[valid]
-        self.flux_err = self.flux_err[valid]
+        self.data = self.data[valid]
 
         msg = (f'Removed {len(valid) - valid.sum()} outliers outside a '
                f'{sigma_outliers}-sigma threshold.')
@@ -412,9 +418,8 @@ class Spextractor:
                    f'factor increased to {downsampling:.3f}')
             self._logger.warning(msg)
 
-        self.wave, self.flux, self.flux_err = \
-            downsample(self.wave, self.flux, self.flux_err,
-                       binning=downsampling, method=downsample_method)
+        self.data = downsample(self.data, binning=downsampling,
+                               method=downsample_method)
 
         msg = (f'Downsampled from {n_points} to {len(self.flux)} points '
                f'with a factor of {downsampling:.2f}.\n')

@@ -2,7 +2,7 @@ import numpy as np
 import GPy
 
 
-def model(x, y, y_err=None, optimize_noise=False, logger=None):
+def model(data, optimize_noise=False, logger=None):
     """Calculate the GPy model for given data.
 
     Uses GPy to determine a Gaussian process model based on given training
@@ -27,10 +27,14 @@ def model(x, y, y_err=None, optimize_noise=False, logger=None):
         Kernel with optimized hyperparameters.
 
     """
-    kernel = GPy.kern.Matern32(1, lengthscale=300., variance=0.001)
+    x = data[:, 0]
+    y = data[:, 1]
+    y_err = data[:, 2]
+
+    kernel = GPy.kern.Matern32(1, lengthscale=300. * 0.0001, variance=0.001)
 
     model_uncertainty = False
-    if y_err is not None and np.any(y_err):
+    if np.any(y_err):
         model_uncertainty = True
     else:
         optimize_noise = True
