@@ -11,18 +11,14 @@ import numpy as np
 
 fn = './spectra/sn2006mo-20061113.21-fast.flm'
 data = np.loadtxt(fn)
-wave = data[:, 0]
-flux = data[:, 1]
-flux_err = data[:, 1]
 
 '''
 Downsample the spectrum with the constraint that photon flux is conserved in
 each bin.
 '''
 downsample_factor = 3.
-ds_wave, ds_flux, ds_flux_err = \
-    downsample(wave, flux, flux_err, binning=downsample_factor)
+ds_data = downsample(data, binning=downsample_factor)
 
-print(flux.shape)
-print(ds_flux.shape)
-print(len(flux) / len(ds_flux))
+print(data.shape)
+print(ds_data.shape)
+print(len(data) / len(ds_data))

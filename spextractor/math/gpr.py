@@ -31,7 +31,7 @@ def model(data, optimize_noise=False, logger=None):
     y = data[:, 1]
     y_err = data[:, 2]
 
-    kernel = GPy.kern.Matern32(1, lengthscale=300. * 0.0001, variance=0.001)
+    kernel = GPy.kern.Matern32(1, lengthscale=300., variance=0.001)
 
     model_uncertainty = False
     if np.any(y_err):

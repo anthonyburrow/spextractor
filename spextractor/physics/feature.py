@@ -6,7 +6,10 @@ from . import doppler
 from ..math import interpolate
 
 
-def velocity(wave, flux, lam0, model, kernel, n_samples=100):
+def velocity(feat_data, lam0, model, kernel, n_samples=100):
+    wave = feat_data[:, 0]
+    flux = feat_data[:, 1]
+
     min_index = flux.argmin()
 
     # If clear feature not found
@@ -34,22 +37,21 @@ def velocity(wave, flux, lam0, model, kernel, n_samples=100):
     return vel, vel_err
 
 
-def pEW(wave, flux):
-    wave_range = wave[[0, -1]]
-    flux_range = flux[[0, -1]]
+def pEW(feat_data):
+    wave_range = feat_data[[0, -1], 0]
 
-    continuum = interpolate.linear(wave, wave_range, flux_range)
-    frac_flux = 1 - flux / continuum
-    pEW = trapz(frac_flux, x=wave)
+    continuum = interpolate.linear(feat_data[:, 0], feat_data[[0, -1]])
+    frac_flux = 1 - feat_data[:, 1] / continuum
+    pEW = trapz(frac_flux, x=feat_data[:, 0])
 
-    pEW_stat_err = np.abs(signal.cwt(flux, signal.ricker, [1])).mean()
+    pEW_stat_err = np.abs(signal.cwt(feat_data[:, 1], signal.ricker, [1])).mean()
     pEW_cont_err = (wave_range[1] - wave_range[0]) * pEW_stat_err
     pEW_err = pEW_stat_err**2 + pEW_cont_err**2
 
     return pEW, pEW_err
 
 
-def depth(wave, flux, flux_err=None):
+def depth(feat_data):
     """Calculate line depth for feature
 
     Args:
@@ -62,20 +64,18 @@ def depth(wave, flux, flux_err=None):
         depth_err (float): Error in depth.
 
     """
-    wave_range = wave[[0, -1]]
-    flux_range = flux[[0, -1]]
-    flux_err_range = flux_err[[0, -1]]
+    feat_range = feat_data[[0, -1]]
 
-    min_ind = flux.argmin()
+    min_ind = feat_data[:, 1].argmin()
 
-    if min_ind == 0 or min_ind == flux.shape[0] - 1:
+    if min_ind == 0 or min_ind == len(feat_data) - 1:
         return np.nan
 
-    cont, cont_err = interpolate.linear(wave[min_ind],
-                                        wave_range, flux_range, flux_err_range)
+    min_wave = np.asarray([feat_data[min_ind, 0]])
+    cont, cont_err = interpolate.linear(min_wave, feat_range)
 
     # Continuum error is extremely large, so depth_err really means nothing
-    depth = cont - flux[min_ind]
-    depth_err = np.sqrt(flux_err[min_ind]**2 + cont_err**2)
+    depth = cont - feat_data[min_ind, 1]
+    depth_err = np.sqrt(feat_data[min_ind, 2]**2 + cont_err**2)
 
     return depth, depth_err

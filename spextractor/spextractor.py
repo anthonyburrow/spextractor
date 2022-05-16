@@ -249,12 +249,13 @@ class Spextractor:
             hi_max_wave = gpr_wave_pred[hi_mask][hi_max_ind]
 
             mask = (lo_max_wave <= gpr_wave_pred) & (gpr_wave_pred <= hi_max_wave)
-            feat_wave = gpr_wave_pred[mask]
-            feat_mean = gpr_mean[mask]
-            feat_err = np.sqrt(gpr_variance[mask])
+            feat_data = np.zeros((mask.sum(), 3))
+            feat_data[:, 0] = gpr_wave_pred[mask]
+            feat_data[:, 1] = gpr_mean[mask]
+            feat_data[:, 2] = np.sqrt(gpr_variance[mask])
 
             # Velocity calculation
-            vel, vel_err = feature.velocity(feat_wave, feat_mean, rest_wave,
+            vel, vel_err = feature.velocity(feat_data, rest_wave,
                                             self._model, self.kernel)
 
             self.vel[_feature] = vel
@@ -268,30 +269,29 @@ class Spextractor:
                 continue
 
             if plot:
-                lam_min = feat_wave[feat_mean.argmin()]
-                self._ax.axvline(lam_min, ymax=min(feat_mean), color='k',
-                                 linestyle='--')
+                min_ind = feat_data[:, 1].argmin()
+                lam_min = feat_data[min_ind, 0]
+                self._ax.axvline(lam_min, ymax=feat_data[:, 1].min(),
+                                 color='k', linestyle='--')
                 self._ax.text(lam_min + 30., 0.015, _feature, rotation=90.,
                               fontsize=8.)
 
             # pEW calculation
-            pew, pew_err = feature.pEW(feat_wave, feat_mean)
+            pew, pew_err = feature.pEW(feat_data)
             self.pew[_feature] = pew
             self.pew_err[_feature] = pew_err
 
             if plot:
-                wave_range = feat_wave[[0, -1]]
-                flux_range = feat_mean[[0, -1]]
+                feat_range = feat_data[[0, -1]]
+                continuum, _ = interpolate.linear(feat_data[:, 0], feat_range)
 
-                continuum = interpolate.linear(feat_wave, wave_range,
-                                               flux_range)
-
-                self._ax.scatter(wave_range, flux_range, color='k', s=30)
-                self._ax.fill_between(feat_wave, feat_mean, continuum,
-                                      color='#00a3cc', alpha=0.3)
+                self._ax.scatter(feat_range[:, 0], feat_range[:, 1], color='k',
+                                 s=30)
+                self._ax.fill_between(feat_data[:, 0], feat_data[:, 1],
+                                      continuum, color='#00a3cc', alpha=0.3)
 
             # Line depth calculation
-            depth, depth_err = feature.depth(feat_wave, feat_mean, feat_err)
+            depth, depth_err = feature.depth(feat_data)
             self.depth[_feature] = depth
             self.depth_err[_feature] = depth_err
 

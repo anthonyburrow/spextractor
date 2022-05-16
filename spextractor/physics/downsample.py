@@ -17,9 +17,6 @@ def _downsample_remove(data, binning):
 
 
 def _downsample_average(data, binning):
-    # wave = data[:, 0]
-    # flux = data[:, 1]
-    # flux_err = data[:, 2]
     n_bins = int(np.around(len(data) / binning))
 
     endpoint_data = np.zeros((n_bins + 1, 3))
