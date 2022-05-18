@@ -2,7 +2,7 @@ import numpy as np
 import GPy
 
 
-def model(data, logger=None):
+def model(data, logger=None, wave_unit=None):
     """Calculate the GPy model for given data.
 
     Uses GPy to determine a Gaussian process model based on given training
@@ -29,7 +29,16 @@ def model(data, logger=None):
     y = data[:, 1]
     y_err = data[:, 2]
 
-    kernel = GPy.kern.Matern32(1, lengthscale=300., variance=0.001)
+    if wave_unit is None or wave_unit == 'angstrom':
+        ls = 300.
+    elif wave_unit == 'micron':
+        ls = 300. * 1.e-4
+    else:
+        msg = f'{wave_unit} is an unrecognized wavelength unit'
+        logger.info(msg)
+        return
+
+    kernel = GPy.kern.Matern32(1, lengthscale=ls, variance=0.001)
 
     model_uncertainty = np.any(y_err)
     if model_uncertainty:

@@ -15,8 +15,8 @@ from .math import interpolate, gpr
 class Spextractor:
 
     def __init__(self, data, sn_type=None, manual_range=False,
-                 outlier_downsampling=20., normalize=True, plot=False,
-                 *args, **kwargs):
+                 outlier_downsampling=20., normalize=True, wave_unit=None,
+                 plot=False, *args, **kwargs):
         """Constructor for the Spextractor class.
 
         Parameters
@@ -42,6 +42,9 @@ class Spextractor:
         plot : bool, optional
             Create and hold a plot of the data, GPR, and velocity/pEW
             information that may be calculated. False by default.
+        plot : str, optional
+            Unit of wavelength for the input data. Available units are
+            'angstrom' and 'micron'. If None, this defaults to 'angstrom'.
 
         **kwargs
             z : float, optional
@@ -68,6 +71,8 @@ class Spextractor:
         self._logger = setup_log(log_fn, *args, **kwargs)
 
         self.data = self._setup_data(data, *args, **kwargs)
+
+        self._wave_unit = wave_unit
 
         # Setup primary plot of (processed but unnormalized) data
         self._plot = plot
@@ -137,7 +142,8 @@ class Spextractor:
             self.fmax_out *= self.flux.max()
         self._normalize_flux()
 
-        model, kern = gpr.model(self.data, logger=self._logger)
+        model, kern = gpr.model(self.data, logger=self._logger,
+                                wave_unit=self._wave_unit)
 
         self._model = model
         self.kernel = kern
@@ -380,7 +386,8 @@ class Spextractor:
         ds_data = downsample(self.data, binning=self._outlier_ds_factor,
                              method=downsample_method)
 
-        model, kernel = gpr.model(ds_data, logger=self._logger)
+        model, kernel = gpr.model(ds_data, logger=self._logger,
+                                  wave_unit=self._wave_unit)
         mean, var = gpr.predict(self.wave, model, kernel)
 
         sigma = np.sqrt(var)
