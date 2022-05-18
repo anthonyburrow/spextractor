@@ -103,8 +103,7 @@ class Spextractor:
         self.depth_err = {}
 
     def create_model(self, sigma_outliers=3., downsample_method='weighted',
-                     downsampling=None, model_uncertainty=True,
-                     optimize_noise=False):
+                     downsampling=None, *args, **kwargs):
         """Makes specifications to the GPR model.
 
         Parameters
@@ -122,26 +121,12 @@ class Spextractor:
             Downsampling factor used for the GPR fit. Downsampled data will
             thus be `1 / downsampling` of its original size. If `downsampling
             <= 1.`, the original data will be used.
-        model_uncertainty : bool, optional
-            If True (default), the flux uncertainty is included in the GPR fit.
-            Otherwise, `optimize_noise` is treated as True to allow the GPR
-            some noise freedom (preventing overfitting). If no flux uncertainty
-            is provided, this is assumed False.
-        optimize_noise : bool, optional
-            Optimize the noise parameter in the GPR kernel. This is False by
-            default. Should probably (maybe) be False if `model_uncertainty` is
-            True.
 
         Returns
         -------
         GPy.models.GPRegression
             The GPR model that is created.
         """
-        if optimize_noise and model_uncertainty:
-            msg = ('Having a non-zero noise with given uncertainty is not '
-                   'statistically legitimate.')
-            self._logger.warning(msg)
-
         if sigma_outliers is not None:
             self._filter_outliers(sigma_outliers, downsample_method)
 
@@ -152,12 +137,7 @@ class Spextractor:
             self.fmax_out *= self.flux.max()
         self._normalize_flux()
 
-        y_err = np.zeros_like(self.flux_err)
-        if model_uncertainty:
-            y_err = self.flux_err
-
-        model, kern = gpr.model(self.data, optimize_noise=optimize_noise,
-                                logger=self._logger)
+        model, kern = gpr.model(self.data, logger=self._logger)
 
         self._model = model
         self.kernel = kern
