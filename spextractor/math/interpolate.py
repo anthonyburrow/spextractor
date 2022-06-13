@@ -29,11 +29,12 @@ def linear(x_new, data):
     dx = x_check - x[ind_lower]
     y_new[total_mask] = y[ind_lower] + dx * slope
 
+
+    y_var_new = np.zeros_like(x_new)
     if not are_errors:
-        return y_new, y_err
+        return y_new, y_var_new
 
     y_var = y_err**2
-    y_var_new = np.zeros_like(x_new)
     y_var_new[~lower_mask] = y_var[0]
     y_var_new[~upper_mask] = y_var[-1]
 
