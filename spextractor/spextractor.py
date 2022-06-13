@@ -132,7 +132,7 @@ class Spextractor:
         GPy.models.GPRegression
             The GPR model that is created.
         """
-        if sigma_outliers is not None:
+        if sigma_outliers > 0.:
             self._filter_outliers(sigma_outliers, downsample_method)
 
         if downsampling is not None:

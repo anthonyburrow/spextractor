@@ -40,7 +40,7 @@ def velocity(feat_data, lam0, model, kernel, n_samples=100):
 def pEW(feat_data):
     wave_range = feat_data[[0, -1], 0]
 
-    continuum = interpolate.linear(feat_data[:, 0], feat_data[[0, -1]])
+    continuum, _ = interpolate.linear(feat_data[:, 0], feat_data[[0, -1]])
     frac_flux = 1 - feat_data[:, 1] / continuum
     pEW = trapz(frac_flux, x=feat_data[:, 0])
 
