@@ -259,10 +259,10 @@ class Spextractor:
             self.vel_err[_feature] = vel_err
 
             if np.isnan(vel):
-                self.pew[_feature] = np.nan
-                self.pew_err[_feature] = np.nan
-                self.depth[_feature] = np.nan
-                self.depth_err[_feature] = np.nan
+                self.pew[_feature] = 0.
+                self.pew_err[_feature] = 0.
+                self.depth[_feature] = 0.
+                self.depth_err[_feature] = 0.
                 continue
 
             if self._plot:
