@@ -173,9 +173,9 @@ class Spextractor:
             each of the prediction points.
         """
         mean, var = gpr.predict(X_pred, self.model, self.kernel)
-        err = np.sqrt(var)
 
         if self._plot:
+            err = np.sqrt(var)
             self._ax.plot(X_pred, mean, color='red', zorder=2, lw=1)
             self._ax.fill_between(X_pred, mean - err, mean + err,
                                   alpha=0.3, color='red', zorder=1)
