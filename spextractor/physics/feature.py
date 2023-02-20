@@ -46,7 +46,7 @@ def pEW(feat_data):
 
     pEW_stat_err = np.abs(signal.cwt(feat_data[:, 1], signal.ricker, [1])).mean()
     pEW_cont_err = (wave_range[1] - wave_range[0]) * pEW_stat_err
-    pEW_err = pEW_stat_err**2 + pEW_cont_err**2
+    pEW_err = np.sqrt(pEW_stat_err**2 + pEW_cont_err**2)
 
     return pEW, pEW_err
 
