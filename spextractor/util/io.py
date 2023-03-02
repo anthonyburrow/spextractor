@@ -4,7 +4,10 @@ from pandas import isna
 
 def load_spectra(filename):
     if filename[-5:] == '.fits':
-        return _load_fits(filename)
+        try:
+            return _load_fits(filename)
+        except Exception:
+            return read_sp_data_fits(filename)
     else:
         return _load_other(filename)
 
@@ -93,6 +96,36 @@ def _load_fits(filename):
     flux_err = np.zeros(len(flux))
 
     return np.c_[wavel, flux, flux_err]
+
+
+def read_sp_data_fits(filename):
+    '''.fits reader from Eddie'''
+    from astropy.io import fits
+
+    hdulist = fits.open(filename)
+    cards = hdulist[ 0 ].header
+
+    # Check if using IRAF style with 4 axes. Assume flux is in AXIS4
+    if "CDELT1" in cards: # FITS Header
+        wldat = cards[ "CRVAL1" ] + cards[ "CDELT1" ] * np.arange( cards[ "NAXIS1" ] )
+        fldat = hdulist[ 0 ].data  
+    elif "CD1_1" in cards: # IRAF Header
+        wldat = cards[ "CRVAL1" ] + cards[ "CD1_1" ] * np.arange( cards[ "NAXIS1" ] )
+        fldat = hdulist[ 0 ].data[0][:]
+        help_ = fldat.shape
+        if len(help_) != 1:
+            fldat = fldat[0,:]
+    else:
+        raise ValueError("No wl scale")
+
+    hdulist.close()
+    index = fldat.ravel().nonzero()
+    wldat = wldat[index]
+    fldat = fldat[index]
+
+    flux_err = np.zeros(len(fldat))
+
+    return np.c_[wldat, fldat, flux_err]
 
 
 def _load_other(filename):
