@@ -54,6 +54,8 @@ class Spextractor:
             remove_zeroes : bool, optional
                 Completely remove data points with flux equal to 0 in the data
                 set.
+            remove_telluric : bool, optional
+                Remove telluric features before correcting for host redshift.
             host_EBV : float, optional
                 Host galaxy color excess used for dereddening.
             host_RV : float, optional
