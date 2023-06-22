@@ -42,7 +42,7 @@ class Spextractor:
         plot : bool, optional
             Create and hold a plot of the data, GPR, and velocity/pEW
             information that may be calculated. False by default.
-        plot : str, optional
+        wave_unit : str, optional
             Unit of wavelength for the input data. Available units are
             'angstrom' and 'micron'. If None, this defaults to 'angstrom'.
 
