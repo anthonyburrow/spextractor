@@ -16,7 +16,7 @@ class Spextractor:
 
     def __init__(self, data, sn_type=None, manual_range=False,
                  outlier_downsampling=20., normalize=True, wave_unit=None,
-                 plot=False, *args, **kwargs):
+                 plot=False, log=False, *args, **kwargs):
         """Constructor for the Spextractor class.
 
         Parameters
@@ -39,12 +39,14 @@ class Spextractor:
             Determines whether the spectrum should be normalized by maximum
             flux. Default is True (recommended, as GPR will not work well
             otherwise).
-        plot : bool, optional
-            Create and hold a plot of the data, GPR, and velocity/pEW
-            information that may be calculated. False by default.
         wave_unit : str, optional
             Unit of wavelength for the input data. Available units are
             'angstrom' and 'micron'. If None, this defaults to 'angstrom'.
+        plot : bool, optional
+            Create and hold a plot of the data, GPR, and velocity/pEW
+            information that may be calculated. False by default.
+        log : bool, optional
+            Determines whether or not a file is created to log console output.
 
         **kwargs
             z : float, optional
@@ -66,11 +68,14 @@ class Spextractor:
                 MW reddening vector used for dereddening. Default is 3.1.
             verbose : bool, optional
                 Display output on console. Default is False.
+            log_dir : str, optional
+                Directory in which to store log file (if desired). Default
+                is a created directory, "./log".
         """
         log_fn = None
         if isinstance(data, str):
             log_fn = f'{data.rsplit(".", 1)[0]:s}.log'
-        self._logger = setup_log(log_fn, *args, **kwargs)
+        self._logger = setup_log(log_fn, log_to_file=log, *args, **kwargs)
 
         self.data = self._setup_data(data, *args, **kwargs)
 
