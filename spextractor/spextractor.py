@@ -74,8 +74,9 @@ class Spextractor:
         """
         log_fn = None
         if isinstance(data, str):
-            log_fn = f'{data.rsplit(".", 1)[0]:s}.log'
-        self._logger = setup_log(log_fn, log_to_file=log, *args, **kwargs)
+            log_fn = f'{data}.log'
+        self._logger = setup_log(filename=log_fn, log_to_file=log,
+                                 *args, **kwargs)
 
         self.data = self._setup_data(data, *args, **kwargs)
 
