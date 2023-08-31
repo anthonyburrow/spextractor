@@ -12,6 +12,7 @@ def preprocess(data, *args, **kwargs):
     data = remove_telluric(data, *args, **kwargs)
     data = deredshift(data, *args, **kwargs)
     data = prune(data, *args, **kwargs)
+    data = mangle(data, *args, **kwargs)
     data = deredden(data, *args, **kwargs)
 
     return data
@@ -67,6 +68,38 @@ def prune(data, wave_range=None, *args, **kwargs):
 
     mask = (wave_range[0] <= data[:, 0]) & (data[:, 0] <= wave_range[1])
     return data[mask]
+
+
+def mangle(data, z=None, phot_file=None, *args, **kwargs):
+    if phot_file is None:
+        return data
+
+    try:
+        import snpy
+        from snpy.mangle_spectrum import mangle_spectrum2
+    except ImportError:
+        print('Snoopy not able to be imported - Spectrum will not be mangled')
+        return data
+
+    if z is None:
+        z = 0.
+
+    # Use snpy to load photometry and get mags in desired format
+    bands = ['u', 'B', 'V', 'g', 'r', 'i']
+
+    snpy_obj = snpy.get_sn(phot_file)
+    res = snpy_obj.get_mag_table(bands)
+
+    wave = data[:, 0]
+    flux = data[:, 1]
+
+    # These are defined as such in snpy.sn.bolometric() (written explicitly here)
+    refband = bands[-1]
+    init = [1. for _ in bands]   # This init should be replaced by something more efficient
+
+    # mflux, ave_wave, pars = \
+    #     mangle_spectrum2(wave, flux, bands, mags[i, masks[i]],
+    #                      z=z, normfilter=refband, init=init)
 
 
 def deredden(data, host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,

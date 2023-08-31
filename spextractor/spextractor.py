@@ -58,6 +58,9 @@ class Spextractor:
                 set.
             remove_telluric : bool, optional
                 Remove telluric features before correcting for host redshift.
+            phot_file : str, optional
+                SNooPy-readable file of observed photometry used for
+                mangling the spectrum.
             host_EBV : float, optional
                 Host galaxy color excess used for dereddening.
             host_RV : float, optional
