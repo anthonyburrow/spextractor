@@ -60,7 +60,25 @@ class Spextractor:
                 Remove telluric features before correcting for host redshift.
             phot_file : str, optional
                 SNooPy-readable file of observed photometry used for
-                mangling the spectrum.
+                mangling the spectrum. Note that `time` must also be provided
+                to interpolate these light-curves.
+            time : float, optional
+                Time that spectrum was observed; used for mangling. This may
+                be MJD or phase past B maximum time.
+            time_format : str, optional
+                Format of `time` kwarg given. Default is 'mjd' for MJD time;
+                'phase' is also allowed, which indicates `time` given in days
+                past B-maximum.
+            t_Bmax : str, optional
+                Time of B_max in MJD; used only when time_format is 'phase'.
+                If `time_format` is 'phase' and a value of `t_Bmax` is not
+                provided, a basic Snoopy fit is performed to estimate `t_Bmax`.
+            phot_interp : str, optional
+                Method of interpolating photometric light-curves. Possible
+                methods are the same as scipy.interpolate.interp1d (e.g.
+                'linear', 'quadratic', etc.), as well as a custom method
+                'powerlaw'. Default is 'quadratic' for assuming interpolation
+                near maximum light.
             host_EBV : float, optional
                 Host galaxy color excess used for dereddening.
             host_RV : float, optional

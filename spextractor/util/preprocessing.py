@@ -3,13 +3,14 @@ import numpy as np
 from ..physics.doppler import deredshift
 from ..physics.deredden import dered_ccm
 from ..physics.telluric import telluric_to_remove
+from .interpolate import power_law, generic
 
 
 def preprocess(data, *args, **kwargs):
     data = remove_nan(data)
     data = remove_zeros(data, *args, **kwargs)
 
-    data = remove_telluric(data, *args, **kwargs)
+    data = remove_telluric(data, *args, **kwargs)   # TODO: AFTER MANGLING
     data = deredshift(data, *args, **kwargs)
     data = prune(data, *args, **kwargs)
     data = mangle(data, *args, **kwargs)
@@ -70,8 +71,40 @@ def prune(data, wave_range=None, *args, **kwargs):
     return data[mask]
 
 
-def mangle(data, z=None, phot_file=None, *args, **kwargs):
+def _convert_phase_to_mjd(time, t_Bmax=None, phot_file=None, *args, **kwargs):
+    if t_Bmax is not None:
+        return t_Bmax + time
+
+    # Get t_Bmax from Snoopy model using phot_file
+
+
+def _interpolate_photometry(time, band, mag_table, phot_interp=None,
+                            *args, **kwargs):
+    mags = mag_table[band]
+
+    mask = mags < 90.
+    mags = mags[mask]
+    times = mag_table['MJD'][mask]
+
+    input_table = np.c_[times, mags]
+
+    if phot_interp is None:
+        phot_interp = 'quadratic'
+
+    if phot_interp == 'powerlaw':
+        return power_law(time, input_table)
+    else:
+        return generic(time, input_table, method=phot_interp)
+
+
+def mangle(data, z=None, phot_file=None, time=None, time_format=None,
+           *args, **kwargs):
     if phot_file is None:
+        return data
+
+    if time is None:
+        # Optionally pick the closest time given in phot_file
+        print('`time` was not provided, so spectrum could not be mangled.')
         return data
 
     try:
@@ -84,22 +117,36 @@ def mangle(data, z=None, phot_file=None, *args, **kwargs):
     if z is None:
         z = 0.
 
-    # Use snpy to load photometry and get mags in desired format
-    bands = ['u', 'B', 'V', 'g', 'r', 'i']
+    # Ensure time is mjd here
+    if time_format == 'phase':
+        time = _convert_phase_to_mjd(time, phot_file=phot_file, *args, **kwargs)
 
+    # Use snpy to load photometry and get mags in desired format
     snpy_obj = snpy.get_sn(phot_file)
+
+    # bands = ['u', 'B', 'V', 'g', 'r', 'i']
+    bands = list(snpy_obj.restbands)
     res = snpy_obj.get_mag_table(bands)
+
+    mags = [_interpolate_photometry(time, b, res, *args, **kwargs)
+            for b in bands]
+    mags = np.array(mags)
 
     wave = data[:, 0]
     flux = data[:, 1]
 
     # These are defined as such in snpy.sn.bolometric() (written explicitly here)
-    refband = bands[-1]
-    init = [1. for _ in bands]   # This init should be replaced by something more efficient
+    refband = None   # This becomes bands[-1] in Snoopy, sorta
+    init = [0.5 for _ in bands]   # This init should be replaced by something more efficient
 
-    # mflux, ave_wave, pars = \
-    #     mangle_spectrum2(wave, flux, bands, mags[i, masks[i]],
-    #                      z=z, normfilter=refband, init=init)
+    mflux, ave_wave, pars = \
+        mangle_spectrum2(wave, flux, bands, mags,
+                         z=z, normfilter=refband, init=init)
+    mflux = mflux.squeeze()
+
+    data[:, 1] = mflux
+    data[:, 2] *= mflux / flux
+    return data
 
 
 def deredden(data, host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,
