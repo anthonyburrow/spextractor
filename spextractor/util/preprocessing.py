@@ -92,9 +92,18 @@ def _interpolate_photometry(time, band, mag_table, phot_interp=None,
         phot_interp = 'quadratic'
 
     if phot_interp == 'powerlaw':
-        return power_law(time, input_table)
+        interp_mag = power_law(time, input_table)
     else:
-        return generic(time, input_table, method=phot_interp)
+        try:
+            interp_mag = generic(time, input_table, method=phot_interp)
+        except ValueError:
+            msg = (
+                f'Time {time} for {band} band cannot be interpolated'
+                # f' with the following times: \n{times}'
+            )
+            raise ValueError(msg)
+
+    return interp_mag
 
 
 def mangle(data, z=None, phot_file=None, time=None, time_format=None,
@@ -110,6 +119,7 @@ def mangle(data, z=None, phot_file=None, time=None, time_format=None,
     try:
         import snpy
         from snpy.mangle_spectrum import mangle_spectrum2
+        from snpy.filters import fset
     except ImportError:
         print('Snoopy not able to be imported - Spectrum will not be mangled')
         return data
@@ -124,8 +134,10 @@ def mangle(data, z=None, phot_file=None, time=None, time_format=None,
     # Use snpy to load photometry and get mags in desired format
     snpy_obj = snpy.get_sn(phot_file)
 
-    # bands = ['u', 'B', 'V', 'g', 'r', 'i']
     bands = list(snpy_obj.restbands)
+    eff_waves = [fset[b].eff_wave(data[:, 0], data[:, 1]) for b in bands]
+    bands = [b for _, b in sorted(zip(eff_waves, bands))]
+
     res = snpy_obj.get_mag_table(bands)
 
     mags = [_interpolate_photometry(time, b, res, *args, **kwargs)
@@ -137,7 +149,7 @@ def mangle(data, z=None, phot_file=None, time=None, time_format=None,
 
     # These are defined as such in snpy.sn.bolometric() (written explicitly here)
     refband = None   # This becomes bands[-1] in Snoopy, sorta
-    init = [0.5 for _ in bands]   # This init should be replaced by something more efficient
+    init = [1. for _ in bands]   # This init should be replaced by something more efficient
 
     mflux, ave_wave, pars = \
         mangle_spectrum2(wave, flux, bands, mags,
