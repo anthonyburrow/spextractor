@@ -99,6 +99,7 @@ class Spextractor:
         self._logger = setup_log(filename=log_fn, log_to_file=log,
                                  *args, **kwargs)
 
+        self.mangle_bands = None
         self.data = self._setup_data(data, *args, **kwargs)
 
         self._wave_unit = wave_unit
@@ -383,7 +384,7 @@ class Spextractor:
             self._logger.info(f'Loading data from {data:s}\n')
             data = load_spectra(data)
 
-        data = preprocess(data, *args, **kwargs)
+        data = preprocess(data, spex=self, *args, **kwargs)
 
         if data.shape[1] < 3:
             msg = 'No flux uncertainties found.'

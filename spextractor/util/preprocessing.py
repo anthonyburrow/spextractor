@@ -86,6 +86,10 @@ def _interpolate_photometry(time, band, mag_table, phot_interp=None,
     mags = mags[mask]
     times = mag_table['MJD'][mask]
 
+    if time < times.min() or time > times.max():
+        msg = f'Time {time} for {band} band outside observed light-curve range'
+        return np.nan
+
     input_table = np.c_[times, mags]
 
     if phot_interp is None:
@@ -94,19 +98,14 @@ def _interpolate_photometry(time, band, mag_table, phot_interp=None,
     if phot_interp == 'powerlaw':
         interp_mag = power_law(time, input_table)
     else:
-        try:
-            interp_mag = generic(time, input_table, method=phot_interp)
-        except ValueError:
-            msg = (
-                f'Time {time} for {band} band cannot be interpolated'
-                # f' with the following times: \n{times}'
-            )
-            raise ValueError(msg)
+        interp_mag = generic(time, input_table, method=phot_interp)
+
+    # import matplotlib.pyplot as plt
 
     return interp_mag
 
 
-def mangle(data, z=None, phot_file=None, time=None, time_format=None,
+def mangle(data, spex=None, z=None, phot_file=None, time=None, time_format=None,
            *args, **kwargs):
     if phot_file is None:
         return data
@@ -136,6 +135,10 @@ def mangle(data, z=None, phot_file=None, time=None, time_format=None,
 
     bands = list(snpy_obj.restbands)
     eff_waves = [fset[b].eff_wave(data[:, 0], data[:, 1]) for b in bands]
+
+    bands = [b for w, b in zip(eff_waves, bands) if not np.isnan(w)]
+    eff_waves = [w for w in eff_waves if not np.isnan(w)]
+
     bands = [b for _, b in sorted(zip(eff_waves, bands))]
 
     res = snpy_obj.get_mag_table(bands)
@@ -144,6 +147,10 @@ def mangle(data, z=None, phot_file=None, time=None, time_format=None,
             for b in bands]
     mags = np.array(mags)
 
+    mask = ~np.isnan(mags)
+    bands = [bands[i] for i in range(len(bands)) if mask[i]]
+    mags = mags[mask]
+
     wave = data[:, 0]
     flux = data[:, 1]
 
@@ -151,13 +158,14 @@ def mangle(data, z=None, phot_file=None, time=None, time_format=None,
     refband = None   # This becomes bands[-1] in Snoopy, sorta
     init = [1. for _ in bands]   # This init should be replaced by something more efficient
 
-    mflux, ave_wave, pars = \
+    mflux, ave_wave, pars, mangle_bands = \
         mangle_spectrum2(wave, flux, bands, mags,
                          z=z, normfilter=refband, init=init)
     mflux = mflux.squeeze()
 
     data[:, 1] = mflux
     data[:, 2] *= mflux / flux
+    spex.mangle_bands = mangle_bands
     return data
 
 
