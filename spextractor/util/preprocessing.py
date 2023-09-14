@@ -100,8 +100,6 @@ def _interpolate_photometry(time, band, mag_table, phot_interp=None,
     else:
         interp_mag = generic(time, input_table, method=phot_interp)
 
-    # import matplotlib.pyplot as plt
-
     return interp_mag
 
 

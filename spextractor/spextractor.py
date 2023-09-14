@@ -382,18 +382,20 @@ class Spextractor:
         """Set up flux (with uncertainty) and wavelength data."""
         if isinstance(data, str):
             self._logger.info(f'Loading data from {data:s}\n')
-            data = load_spectra(data)
+            _data = load_spectra(data)
+        else:
+            _data = data.copy()
 
-        data = preprocess(data, spex=self, *args, **kwargs)
+        _data = preprocess(_data, spex=self, *args, **kwargs)
 
-        if data.shape[1] < 3:
+        if _data.shape[1] < 3:
             msg = 'No flux uncertainties found.'
             self._logger.info(msg)
 
-            flux_err = np.zeros(len(data))
-            data = np.c_[data, flux_err]
+            flux_err = np.zeros(len(_data))
+            _data = np.c_[_data, flux_err]
 
-        return data
+        return _data
 
     def _normalize_flux(self):
         """Normalize the flux."""
