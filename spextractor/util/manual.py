@@ -26,6 +26,8 @@ class ManualRange:
         self.ax.plot(self.w, self.f)
         self.ax.set_title('Select feature to change (dashed lines)')
 
+        self.ax.set_xlim(right=10000.)
+
         y_min, y_max = self.ax.get_ylim()
         y_pos = y_min + 0.4 * (self.f.min() - y_min)
         for feature in self.def_lines:
