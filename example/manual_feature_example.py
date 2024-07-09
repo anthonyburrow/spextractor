@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from spextractor import Spextractor
 
 
-fn = './spectra/sn2006mo-20061113.21-fast.flm'
+fn = './data/sn2006mo-20061113.21-fast.flm'
 z = 0.0459
 
 '''
@@ -21,14 +21,14 @@ Create the Spextractor instance.
 - Close the plot when finished with selection.
 '''
 
-spex = Spextractor(fn, z=z, manual_range=True)
+spex = Spextractor(fn, z=z, plot=True, manual_range=True)
 
 '''
 Continue as normal from here with the updated feature ranges.
 '''
 
 spex.create_model(downsampling=3.)
-spex.process(plot=True)
+spex.process()
 
 si = 'Si II 6150A'
 vsi = spex.vel[si]

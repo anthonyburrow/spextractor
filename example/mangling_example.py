@@ -1,6 +1,9 @@
 from spextractor import Spextractor
 
 
+# ASAS14ad.dat is not included so this will fail; but this is how this is done.
+# The photometry file needs to be in SNooPy-readable format
+
 fn = './data/sn2006mo-20061113.21-fast.flm'
 spex_args = {
     'z': 0.0459,

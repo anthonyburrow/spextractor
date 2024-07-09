@@ -1,6 +1,8 @@
 import numpy as np
 from pandas import isna
 
+import sys
+
 
 def load_spectra(filename):
     if filename[-5:] == '.fits':
@@ -142,7 +144,6 @@ def _load_other(filename):
             from astropy.io import ascii
             data = ascii.read(filename)
         except Exception as e:
-            print(prev.message, e.message, filename)
-            raise e
+            sys.exit(e)
 
     return data

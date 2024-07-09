@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from spextractor import Spextractor
 
 
-fn = './spectra/sn2006mo-20061113.21-fast.flm'
+fn = './data/sn2006mo-20061113.21-fast.flm'
 z = 0.0459
 
 '''

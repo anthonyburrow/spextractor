@@ -72,3 +72,7 @@ coverage.xml
 *.tmp
 *.vim
 tags
+
+
+# Spextractor specific
+example/log
