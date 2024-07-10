@@ -97,7 +97,8 @@ def _velocity_blue_edge(feat_data, rest_wave, spex, n_samples=100,
     # Calculate velocity
     vel, vel_err = doppler.velocity(lam, lam_err, rest_wave)
 
-    spex._ax.plot(wave, feat_profile(wave, *params), 'b-')
+    if spex._plot:
+        spex._ax.plot(wave, feat_profile(wave, *params), 'b-')
 
     draw_point = lam, feat_profile(lam, *params)
 
