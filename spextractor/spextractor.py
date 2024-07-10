@@ -212,8 +212,7 @@ class Spextractor:
 
         return mean, var
 
-    def process(self, features=None, predict_res=2000, hv_features=None,
-                high_velocity=True):
+    def process(self, features=None, predict_res=2000):
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
 
@@ -226,13 +225,6 @@ class Spextractor:
         predict_res : int, optional
             Sample size (resolution) of prediction values predicted by GPR
             model.
-        hv_features : tuple, optional
-            Tuple of feature strings for which to use high-velocity wavelength
-            ranges.
-        high_velocity : bool, optional
-            Use high-velocity wavelength ranges for features provided in
-            hv_features. This is mostly used as a convenient toggle. Default
-            is True.
         """
         t0 = time.time()
 
@@ -242,21 +234,11 @@ class Spextractor:
         if features is None:
             features = self._features
 
-        if hv_features is None:
-            hv_features = []
-
         for _feature in features:
             rest_wave = self._features[_feature]['rest']
 
             lo_range = self._features[_feature]['lo_range']
             hi_range = self._features[_feature]['hi_range']
-            if high_velocity and _feature in hv_features:
-                try:
-                    lo_range = self._features[_feature]['lo_range_hv']
-                    hi_range = self._features[_feature]['hi_range_hv']
-                except KeyError:
-                    msg = f'{_feature} does not have defined HV wavelengths'
-                    self._logger.warning(msg)
 
             lo_mask = (lo_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= lo_range[1])
             hi_mask = (hi_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= hi_range[1])
