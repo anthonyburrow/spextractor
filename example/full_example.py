@@ -47,9 +47,6 @@ Do feature calculations (velocity, pEW, depth, etc.).
 si = 'Si II 6150A'
 spex.process()
 
-# Or you can specify high-velocity features that are defined in "lines.py"
-# spex.process(plot=True, hv_features=(si, ))
-
 vsi = spex.vel[si]
 vsi_err = spex.vel_err[si]
 print(f'vsi = {vsi:.3f} +- {vsi_err:.3f}')

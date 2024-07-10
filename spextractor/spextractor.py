@@ -212,7 +212,7 @@ class Spextractor:
 
         return mean, var
 
-    def process(self, features=None, predict_res=2000):
+    def process(self, features=None, predict_res=2000, *args, **kwargs):
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
 
@@ -225,6 +225,9 @@ class Spextractor:
         predict_res : int, optional
             Sample size (resolution) of prediction values predicted by GPR
             model.
+
+        **kwargs:
+            velocity_method
         """
         t0 = time.time()
 
@@ -264,8 +267,8 @@ class Spextractor:
             feat_data[:, 2] = np.sqrt(gpr_variance[mask])
 
             # Velocity calculation
-            vel, vel_err = feature.velocity(feat_data, rest_wave,
-                                            self._model, self.kernel)
+            vel, vel_err, draw_point = \
+                feature.velocity(feat_data, rest_wave, self, *args, **kwargs)
 
             self.vel[_feature] = vel
             self.vel_err[_feature] = vel_err
@@ -278,12 +281,10 @@ class Spextractor:
                 continue
 
             if self._plot:
-                min_ind = feat_data[:, 1].argmin()
-                lam_min = feat_data[min_ind, 0]
-                self._ax.axvline(lam_min, ymax=feat_data[:, 1].min(),
+                self._ax.axvline(draw_point[0], ymax=draw_point[1],
                                  color='k', linestyle='--')
-                self._ax.text(lam_min + 30., 0.015, _feature, rotation=90.,
-                              fontsize=8.)
+                self._ax.text(draw_point[0] + 30., 0.015, _feature,
+                              rotation=90., fontsize=8.)
 
             # pEW calculation
             pew, pew_err = feature.pEW(feat_data)

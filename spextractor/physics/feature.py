@@ -1,12 +1,30 @@
 import numpy as np
 from scipy.integrate import trapz
 from scipy import signal
+from scipy.optimize import curve_fit
+
+import sys
 
 from . import doppler
 from ..math import interpolate
+from ..math.functions import gaussian
 
 
-def velocity(feat_data, lam0, model, kernel, n_samples=100):
+def velocity(feat_data, rest_wave, spex, velocity_method=None,
+             *args, **kwargs):
+    if velocity_method is None:
+        velocity_method = 'minimum'
+
+    if velocity_method == 'minimum':
+        return _velocity_minimum(feat_data, rest_wave, spex, *args, **kwargs)
+    if velocity_method == 'blue_edge':
+        return _velocity_blue_edge(feat_data, rest_wave, spex, *args, **kwargs)
+    else:
+        sys.exit('Invalid velocity method given')
+
+
+def _velocity_minimum(feat_data, rest_wave, spex, n_samples=100,
+                      *args, **kwargs):
     wave = feat_data[:, 0]
     flux = feat_data[:, 1]
 
@@ -20,8 +38,8 @@ def velocity(feat_data, lam0, model, kernel, n_samples=100):
 
     # To estimate the error, sample possible spectra from the posterior
     # and find the minima
-    samples = model.posterior_samples_f(wave[:, np.newaxis], n_samples,
-                                        kern=kernel.copy())
+    samples = spex.model.posterior_samples_f(wave[:, np.newaxis], n_samples,
+                                             kern=spex.kernel.copy())
     samples = samples.squeeze()
     min_sample_indices = samples.argmin(axis=0)
 
@@ -32,9 +50,58 @@ def velocity(feat_data, lam0, model, kernel, n_samples=100):
 
     lam_min_err = np.std(wave[min_sample_indices])
 
-    vel, vel_err = doppler.velocity(lam_min, lam_min_err, lam0)
+    vel, vel_err = doppler.velocity(lam_min, lam_min_err, rest_wave)
 
-    return vel, vel_err
+    draw_point = lam_min, flux.min()
+
+    return vel, vel_err, draw_point
+
+
+def _velocity_blue_edge(feat_data, rest_wave, spex, n_samples=100,
+                        feat_profile=None, profile_params=None,
+                        *args, **kwargs):
+    wave = feat_data[:, 0]
+    flux = feat_data[:, 1]
+
+    if feat_profile is None:
+        feat_profile = gaussian
+
+    if profile_params is None:
+        mu = wave[flux.argmin()]
+        sigma = 0.5 * (wave[-1] - wave[0])
+        profile_params = (mu, sigma, -0.1, 0.5)
+        bounds = (
+            (wave[0], 0., -2., 0.),
+            (wave[-1], 5. * sigma, 0., 1.)
+        )
+
+    params, _ = curve_fit(feat_profile, wave, flux,
+                          p0=profile_params, bounds=bounds)
+    mu, sigma = params[:2]
+    lam = mu - 3. * sigma
+
+    # Calculate lambda error through sampling
+    samples = spex.model.posterior_samples_f(wave[:, np.newaxis], n_samples,
+                                             kern=spex.kernel.copy())
+    samples = samples.squeeze().T
+
+    lam_samples = []
+    for sample in samples:
+        params_err, _ = curve_fit(feat_profile, wave, sample,
+                                  p0=profile_params, bounds=bounds)
+        mu_err, sigma_err = params_err[:2]
+        lam_samples.append(mu_err - 3. * sigma_err)
+
+    lam_err = np.std(lam_samples)
+
+    # Calculate velocity
+    vel, vel_err = doppler.velocity(lam, lam_err, rest_wave)
+
+    spex._ax.plot(wave, feat_profile(wave, *params), 'b-')
+
+    draw_point = lam, feat_profile(lam, *params)
+
+    return vel, vel_err, draw_point
 
 
 def pEW(feat_data):
