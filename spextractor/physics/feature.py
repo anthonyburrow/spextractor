@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.integrate import trapz
+from scipy.integrate import trapezoid
 from scipy import signal
 from scipy.optimize import curve_fit
 
@@ -110,7 +110,7 @@ def pEW(feat_data):
 
     continuum, _ = interpolate.linear(feat_data[:, 0], feat_data[[0, -1]])
     frac_flux = 1 - feat_data[:, 1] / continuum
-    pEW = trapz(frac_flux, x=feat_data[:, 0])
+    pEW = trapezoid(frac_flux, x=feat_data[:, 0])
 
     pEW_stat_err = np.abs(signal.cwt(feat_data[:, 1], signal.ricker, [1])).mean()
     pEW_cont_err = (wave_range[1] - wave_range[0]) * pEW_stat_err
