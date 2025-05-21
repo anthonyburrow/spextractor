@@ -1,0 +1,36 @@
+[build-system]
+requires = [
+    "setuptools"
+]
+build-backend = "setuptools.build_meta"
+
+
+[project]
+name = "spextractor"
+version = "0.0.1"
+authors = [
+    {name = "Anthony Burrow", email = "anthony.r.burrow@gmail.com"},
+]
+maintainers = [
+    {name = "Anthony Burrow", email = "anthony.r.burrow@gmail.com"}
+]
+description = "Fits and processes spectra using Gaussian processes."
+license = {file = "LICENSE"}
+readme = "README.md"
+classifiers=[
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Topic :: Scientific/Engineering :: Astronomy",
+    "Topic :: Scientific/Engineering :: Physics",
+    "Intended Audience :: Science/Research",
+]
+dependencies = [
+    "numpy",
+    "scipy>=1.14",
+    "scikit-learn",
+    "matplotlib",
+    "SpectrumCore @ git+https://github.com/anthonyburrow/SpectrumCore.git"
+]
+
+[project.urls]
+Repository = "https://github.com/anthonyburrow/spextractor.git"
