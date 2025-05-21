@@ -9,7 +9,7 @@ from spextractor import Spextractor
 import numpy as np
 
 
-fn = './data/sn2006mo-20061113.21-fast.flm'
+fn = './data/SN2006mo.dat'
 z = 0.0459
 
 spex = Spextractor(fn, z=z, verbose=False, log=True)

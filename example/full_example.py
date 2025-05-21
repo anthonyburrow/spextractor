@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 from spextractor import Spextractor
 
 
-fn = './data/sn2006mo-20061113.21-fast.flm'
+fn = './data/SN2006mo.dat'
 z = 0.0459
 
 '''
@@ -18,10 +18,6 @@ Create the Spextractor instance.
 - Data is provided here in the form of a file path (str) or data array
   (numpy.ndarray).
 - Redshift specified here.
-- For  fitting the entire given spectrum (with no feature calculations) you may
-  want to set `auto_prune=False`. `auto_prune` is True by default and therefore
-  spextractor may work in the limited range specified in
-  "spextractor/physics/lines.py".
 - Other parameters available (see constructor docstring).
 '''
 spex = Spextractor(fn, z=z, plot=True)
@@ -42,7 +38,6 @@ Do feature calculations (velocity, pEW, depth, etc.).
   `.pew_err`, `.vel`, `.vel_err`, etc.
 - Keys to dictionary attributes are the strings again found in the "lines.py",
   such that each feature has an associated velocity, pEW, etc..
-- Controls whether a plot is created during this process.
 '''
 si = 'Si II 6150A'
 spex.process()

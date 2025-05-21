@@ -72,12 +72,6 @@ class Spextractor:
         self._plot = plot
         self._fig, self._ax = None, None
 
-        # Scale data
-        # self._normalize = normalize
-        # self.fmax_in = self.flux.max()
-        # self.fmax_out = self.fmax_in
-        # self._normalize_flux()
-
         # Define features
         if sn_type is None:
             sn_type = 'Ia'
@@ -359,15 +353,16 @@ class Spextractor:
 
         wave = self.spectrum.wave
         flux = self.spectrum.flux
-        error = self.spectrum.error
 
         self._ax.plot(
             wave, flux, color='k', alpha=0.7, lw=1, zorder=0
         )
-        self._ax.fill_between(
-            wave, flux - error, flux + error,
-            color='grey', alpha=0.5, zorder=-1
-        )
+        if self.spectrum.has_error:
+            error = self.spectrum.error
+            self._ax.fill_between(
+                wave, flux - error, flux + error,
+                color='grey', alpha=0.5, zorder=-1
+            )
 
         # Display the GPR
         wave_pred = np.linspace(
