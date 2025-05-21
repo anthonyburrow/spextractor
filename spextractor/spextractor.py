@@ -2,20 +2,18 @@ import numpy as np
 import matplotlib.pyplot as plt
 import time
 
-from .util.io import load_spectra
-from .util.preprocessing import preprocess
+from SpectrumCore.Spectrum import Spectrum
+
 from .util.log import setup_log
 from .util.manual import ManualRange
 from .physics import feature
 from .physics.lines import get_features
-from .physics.downsample import downsample
 from .math import interpolate, gpr
 
 
 class Spextractor:
 
-    def __init__(self, data, sn_type=None, manual_range=False,
-                 outlier_downsampling=20., normalize=True, wave_unit=None,
+    def __init__(self, data, sn_type=None, manual_range=False, wave_unit=None,
                  plot=False, log=False, *args, **kwargs):
         """Constructor for the Spextractor class.
 
@@ -31,14 +29,6 @@ class Spextractor:
         manual_range : bool, optional
             Used for manually setting feature minimum/maximum ranges via a
             spectrum plot. False by default.
-        outlier_downsampling : float, optional
-            Downsampling factor if outliers are removed from the GPR training
-            set. This is meant to be relatively large for quickly performing
-            the first GPR fit used to select outliers.
-        normalize : bool, optional
-            Determines whether the spectrum should be normalized by maximum
-            flux. Default is True (recommended, as GPR will not work well
-            otherwise).
         wave_unit : str, optional
             Unit of wavelength for the input data. Available units are
             'angstrom' and 'micron'. If None, this defaults to 'angstrom'.
@@ -53,32 +43,6 @@ class Spextractor:
                 Redshift value for rest-frame wavelength correction.
             wave_range : tuple, optional
                 Manually-set pruning window in Angstroms. Default is None.
-            remove_zeroes : bool, optional
-                Completely remove data points with flux equal to 0 in the data
-                set.
-            remove_telluric : bool, optional
-                Remove telluric features before correcting for host redshift.
-            phot_file : str, optional
-                SNooPy-readable file of observed photometry used for
-                mangling the spectrum. Note that `time` must also be provided
-                to interpolate these light-curves.
-            time : float, optional
-                Time that spectrum was observed; used for mangling. This may
-                be MJD or phase past B maximum time.
-            time_format : str, optional
-                Format of `time` kwarg given. Default is 'mjd' for MJD time;
-                'phase' is also allowed, which indicates `time` given in days
-                past B-maximum.
-            t_Bmax : str, optional
-                Time of B_max in MJD; used only when time_format is 'phase'.
-                If `time_format` is 'phase' and a value of `t_Bmax` is not
-                provided, a basic Snoopy fit is performed to estimate `t_Bmax`.
-            phot_interp : str, optional
-                Method of interpolating photometric light-curves. Possible
-                methods are the same as scipy.interpolate.interp1d (e.g.
-                'linear', 'quadratic', etc.), as well as a custom method
-                'powerlaw'. Default is 'quadratic' for assuming interpolation
-                near maximum light.
             host_EBV : float, optional
                 Host galaxy color excess used for dereddening.
             host_RV : float, optional
@@ -99,8 +63,8 @@ class Spextractor:
         self._logger = setup_log(filename=log_fn, log_to_file=log,
                                  *args, **kwargs)
 
-        self.mangle_bands = None
-        self.data = self._setup_data(data, *args, **kwargs)
+        self.spectrum = Spectrum(data)
+        self._preprocess_spectrum(*args, **kwargs)
 
         self._wave_unit = wave_unit
 
@@ -109,10 +73,10 @@ class Spextractor:
         self._fig, self._ax = None, None
 
         # Scale data
-        self._normalize = normalize
-        self.fmax_in = self.flux.max()
-        self.fmax_out = self.fmax_in
-        self._normalize_flux()
+        # self._normalize = normalize
+        # self.fmax_in = self.flux.max()
+        # self.fmax_out = self.fmax_in
+        # self._normalize_flux()
 
         # Define features
         if sn_type is None:
@@ -121,10 +85,8 @@ class Spextractor:
 
         if manual_range:
             self._logger.info('Manually changing feature bounds...')
-            m = ManualRange(self.data, self._features, self._logger)
+            m = ManualRange(self.spectrum.data, self._features, self._logger)
             self._features = m.def_lines
-
-        self._outlier_ds_factor = outlier_downsampling
 
         # Undefined instance attributes
         self._model = None
@@ -137,21 +99,11 @@ class Spextractor:
         self.depth = {}
         self.depth_err = {}
 
-    def create_model(self, sigma_outliers=3., downsample_method='weighted',
-                     downsampling=None, *args, **kwargs):
+    def create_model(self, downsampling=None, *args, **kwargs):
         """Makes specifications to the GPR model.
 
         Parameters
         ----------
-        sigma_outliers : float, optional
-            Sigma factor that defines outliers. Sigma is the calculated
-            standard deviation of the heavily downsampled GPR fit. This is 3.
-            by default. Set to `None` to cancel this process.
-        downsample_method : str, optional
-            Method of downsampling. May be 'weighted' (integrates at each bin
-            to conserve photon flux) or 'remove' (uses only every
-            `downsampling`th point; this is not as accurate but faster than
-            'weighted').
         downsampling : float, optional
             Downsampling factor used for the GPR fit. Downsampled data will
             thus be `1 / downsampling` of its original size. If `downsampling
@@ -162,18 +114,13 @@ class Spextractor:
         GPy.models.GPRegression
             The GPR model that is created.
         """
-        if sigma_outliers > 0.:
-            self._filter_outliers(sigma_outliers, downsample_method)
+        if downsampling is None:
+            downsampling = 1.
+        self._downsample(downsampling)
 
-        if downsampling is not None:
-            self._downsample(downsampling, downsample_method)
-
-        if self._normalize:
-            self.fmax_out *= self.flux.max()
-        self._normalize_flux()
-
-        model, kern = gpr.model(self.data, logger=self._logger,
-                                wave_unit=self._wave_unit)
+        model, kern = gpr.model(
+            self.spectrum.data, logger=self._logger, wave_unit=self._wave_unit
+        )
 
         self._model = model
         self.kernel = kern
@@ -207,8 +154,10 @@ class Spextractor:
         if self._plot:
             err = np.sqrt(var)
             self._ax.plot(X_pred, mean, color='red', zorder=2, lw=1)
-            self._ax.fill_between(X_pred, mean - err, mean + err,
-                                  alpha=0.3, color='red', zorder=1)
+            self._ax.fill_between(
+                X_pred, mean - err, mean + err,
+                alpha=0.3, color='red', zorder=1
+            )
 
         return mean, var
 
@@ -223,15 +172,16 @@ class Spextractor:
             properties. These must be included in "./physics/lines.py". By
             default, every feature in "lines.py" is processed.
         predict_res : int, optional
-            Sample size (resolution) of prediction values predicted by GPR
-            model.
+            Sample size (resolution) of values predicted by GPR model.
 
         **kwargs:
             velocity_method
         """
         t0 = time.time()
 
-        gpr_wave_pred = np.linspace(self.wave[0], self.wave[-1], predict_res)
+        gpr_wave_pred = np.linspace(
+            self.spectrum.wave_start, self.spectrum.wave_end, predict_res
+        )
         gpr_mean, gpr_variance = self.predict(gpr_wave_pred)
 
         if features is None:
@@ -281,10 +231,14 @@ class Spextractor:
                 continue
 
             if self._plot:
-                self._ax.axvline(draw_point[0], ymax=draw_point[1],
-                                 color='k', linestyle='--')
-                self._ax.text(draw_point[0] + 30., 0.015, _feature,
-                              rotation=90., fontsize=8.)
+                self._ax.axvline(
+                    draw_point[0], ymax=draw_point[1],
+                    color='k', linestyle='--'
+                )
+                self._ax.text(
+                    draw_point[0] + 30., 0.015, _feature,
+                    rotation=90., fontsize=8.
+                )
 
             # pEW calculation
             pew, pew_err = feature.pEW(feat_data)
@@ -295,10 +249,13 @@ class Spextractor:
                 feat_range = feat_data[[0, -1]]
                 continuum, _ = interpolate.linear(feat_data[:, 0], feat_range)
 
-                self._ax.scatter(feat_range[:, 0], feat_range[:, 1], color='k',
-                                 s=30)
-                self._ax.fill_between(feat_data[:, 0], feat_data[:, 1],
-                                      continuum, color='#00a3cc', alpha=0.3)
+                self._ax.scatter(
+                    feat_range[:, 0], feat_range[:, 1], color='k', s=30
+                )
+                self._ax.fill_between(
+                    feat_data[:, 0], feat_data[:, 1], continuum,
+                    color='#00a3cc', alpha=0.3
+                )
 
             # Line depth calculation
             depth, depth_err = feature.depth(feat_data)
@@ -306,30 +263,22 @@ class Spextractor:
             self.depth_err[_feature] = depth_err
 
             if depth < 0.:
-                msg = (f'Calculated unphysical line depth for {_feature}:'
-                       f'{depth:.3f} +- {depth_err:.3f}')
+                msg = (
+                    f'Calculated unphysical line depth for {_feature}:'
+                    f'{depth:.3f} +- {depth_err:.3f}'
+                )
                 self._logger.warning(msg)
 
         self._logger.info(f'Calculations took {time.time() - t0:.3f} s.')
         self._logger.handlers = []   # Close log handlers between instantiations
 
     @property
-    def wave(self):
-        return self.data[:, 0]
-
-    @property
-    def flux(self):
-        return self.data[:, 1]
-
-    @property
-    def flux_err(self):
-        return self.data[:, 2]
-
-    @property
     def model(self):
         if self._model is None:
-            msg = ('Attempted to use model without generating first. '
-                   'Creating model with default parameters...')
+            msg = (
+                'Attempted to use model without generating first. '
+                'Creating model with default arguments...'
+            )
             self._logger.warning(msg)
             self.create_model()
 
@@ -361,75 +310,55 @@ class Spextractor:
     def plot(self):
         return self._fig, self._ax
 
-    def _setup_data(self, data, *args, **kwargs):
-        """Set up flux (with uncertainty) and wavelength data."""
-        if isinstance(data, str):
-            self._logger.info(f'Loading data from {data:s}\n')
-            _data = load_spectra(data)
-        else:
-            _data = data.copy()
+    def _preprocess_spectrum(
+        self, z: float = None, wave_range: tuple[float] = None,
+        host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,
+        *args, **kwargs
+    ):
+        self.spectrum.remove_nans()
+        self.spectrum.remove_nonpositive()
 
-        _data = preprocess(_data, spex=self, *args, **kwargs)
+        self.spectrum.remove_telluric()   # TODO: AFTER MANGLING
 
-        if _data.shape[1] < 3:
-            msg = 'No flux uncertainties found.'
-            self._logger.info(msg)
+        if z is not None and z != 0.:
+            self.spectrum.deredshift(z)
 
-            flux_err = np.zeros(len(_data))
-            _data = np.c_[_data, flux_err]
+        if wave_range is not None:
+            self.spectrum.prune(wave_range)
 
-        return _data
+        # Milky Way extinction
+        if MW_EBV is not None and MW_EBV != 0. and MW_RV is not None:
+            self.spectrum.deredden(E_BV=MW_EBV, R_V=MW_RV)
 
-    def _normalize_flux(self):
-        """Normalize the flux."""
-        if not self._normalize:
-            return
+        # Host extinction
+        if host_EBV is not None and host_EBV != 0. and host_RV is not None:
+            self.spectrum.deredden(E_BV=host_EBV, R_V=host_RV)
 
-        max_flux = self.flux.max()
-        self.data[:, 1] /= max_flux
+        self.spectrum.normalize_flux(method='max')
 
-        if np.any(self.flux_err):
-            self.data[:, 2] /= max_flux
-
-    def _filter_outliers(self, sigma_outliers, downsample_method):
-        """Attempt to remove sharp lines (teluric, cosmic rays...).
-
-        First applies a heavy downsampling and then discards points that are
-        further than 'sigma_outliers' standard deviations.
-
-        """
-        ds_data = downsample(self.data, binning=self._outlier_ds_factor,
-                             method=downsample_method)
-
-        model, kernel = gpr.model(ds_data, logger=self._logger,
-                                  wave_unit=self._wave_unit)
-        mean, var = gpr.predict(self.wave, model, kernel)
-
-        sigma = np.sqrt(var)
-        valid = np.abs(self.flux - mean) < sigma_outliers * sigma
-
-        self.data = self.data[valid]
-
-        msg = (f'Removed {len(valid) - valid.sum()} outliers outside a '
-               f'{sigma_outliers}-sigma threshold.')
-        self._logger.info(msg)
-
-    def _downsample(self, downsampling, downsample_method):
+    def _downsample(self, downsampling):
         """Handle downsampling."""
-        n_points = len(self.flux)
-        sample_limit = 5000   # Depends on Python memory limits
+        n_points = len(self.spectrum)
+        sample_limit = 4000
 
-        if n_points / downsampling > sample_limit:
-            downsampling = n_points / sample_limit + 0.1
-            msg = (f'Flux array is too large for memory. Downsampling '
-                   f'factor increased to {downsampling:.3f}')
+        if int(n_points / downsampling) > sample_limit:
+            downsampling = n_points / sample_limit
+            msg = (
+                f'Flux array is too large (>{sample_limit}). '
+                f'Downsampling will be adjusted. '
+            )
             self._logger.warning(msg)
 
-        self.data = downsample(self.data, binning=downsampling,
-                               method=downsample_method)
+        if downsampling <= 1.:
+            return
 
-        msg = (f'Downsampled from {n_points} to {len(self.flux)} points '
-               f'with a factor of {downsampling:.2f}.\n')
+        self.spectrum.downsample(factor=downsampling)
+        self.spectrum.normalize_flux(method='max')
+
+        msg = (
+            f'Downsampled from {n_points} to {len(self.spectrum)} points '
+            f'with a factor of {downsampling:.2f}.\n'
+        )
         self._logger.info(msg)
 
     def _setup_plot(self):
@@ -443,8 +372,14 @@ class Spextractor:
         self._ax.set_ylabel(r'$\mathrm{Normalized\ flux}$', size=14)
         self._ax.set_ylim(0, 1)
 
-        self._ax.plot(self.wave, self.flux, color='k', alpha=0.7, lw=1,
-                      zorder=0)
-        self._ax.fill_between(self.wave, self.flux - self.flux_err,
-                              self.flux + self.flux_err, color='grey',
-                              alpha=0.5, zorder=-1)
+        wave = self.spectrum.wave
+        flux = self.spectrum.flux
+        error = self.spectrum.error
+
+        self._ax.plot(
+            wave, flux, color='k', alpha=0.7, lw=1, zorder=0
+        )
+        self._ax.fill_between(
+            wave, flux - error, flux + error,
+            color='grey', alpha=0.5, zorder=-1
+        )

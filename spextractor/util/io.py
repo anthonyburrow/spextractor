@@ -1,5 +1,4 @@
 import numpy as np
-from pandas import isna
 
 import sys
 
