@@ -90,7 +90,6 @@ class Spextractor:
 
         # Undefined instance attributes
         self._model = None
-        self.kernel = None
 
         self.pew = {}
         self.pew_err = {}
@@ -118,12 +117,9 @@ class Spextractor:
             downsampling = 1.
         self._downsample(downsampling)
 
-        model, kern = gpr.model(
-            self.spectrum.data, logger=self._logger, wave_unit=self._wave_unit
-        )
+        model = gpr.model(self.spectrum, logger=self._logger)
 
         self._model = model
-        self.kernel = kern
 
         if self._plot:
             self._setup_plot()
@@ -133,7 +129,6 @@ class Spextractor:
     def reset_model(self):
         """Clears the current GPR model."""
         self._model = None
-        self.kernel = None
 
     def predict(self, X_pred):
         """Use the created GPR model to make a prediction at any given points.
@@ -146,20 +141,10 @@ class Spextractor:
         Returns
         -------
         (numpy.ndarray, numpy.ndarray)
-            A tuple consisting of the mean and variance values calculated at
+            A tuple consisting of the mean and uncertainty values calculated at
             each of the prediction points.
         """
-        mean, var = gpr.predict(X_pred, self.model, self.kernel)
-
-        if self._plot:
-            err = np.sqrt(var)
-            self._ax.plot(X_pred, mean, color='red', zorder=2, lw=1)
-            self._ax.fill_between(
-                X_pred, mean - err, mean + err,
-                alpha=0.3, color='red', zorder=1
-            )
-
-        return mean, var
+        return gpr.predict(X_pred, self.model)
 
     def process(self, features=None, predict_res=2000, *args, **kwargs):
         """Calculate the line velocities, pEWs, and line depths of each
@@ -182,7 +167,7 @@ class Spextractor:
         gpr_wave_pred = np.linspace(
             self.spectrum.wave_start, self.spectrum.wave_end, predict_res
         )
-        gpr_mean, gpr_variance = self.predict(gpr_wave_pred)
+        gpr_mean, gpr_std = gpr.predict(gpr_wave_pred, self.model)
 
         if features is None:
             features = self._features
@@ -214,7 +199,7 @@ class Spextractor:
             feat_data = np.zeros((mask.sum(), 3))
             feat_data[:, 0] = gpr_wave_pred[mask]
             feat_data[:, 1] = gpr_mean[mask]
-            feat_data[:, 2] = np.sqrt(gpr_variance[mask])
+            feat_data[:, 2] = gpr_std[mask]
 
             # Velocity calculation
             vel, vel_err, draw_point = \
@@ -382,4 +367,16 @@ class Spextractor:
         self._ax.fill_between(
             wave, flux - error, flux + error,
             color='grey', alpha=0.5, zorder=-1
+        )
+
+        # Display the GPR
+        wave_pred = np.linspace(
+            self.spectrum.wave_start, self.spectrum.wave_end, 2000
+        )
+        mean, std = gpr.predict(wave_pred, self.model)
+
+        self._ax.plot(wave_pred, mean, color='red', zorder=2, lw=1)
+        self._ax.fill_between(
+            wave_pred, mean - std, mean + std,
+            alpha=0.3, color='red', zorder=1
         )

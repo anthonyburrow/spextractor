@@ -38,9 +38,7 @@ def _velocity_minimum(feat_data, rest_wave, spex, n_samples=100,
 
     # To estimate the error, sample possible spectra from the posterior
     # and find the minima
-    samples = spex.model.posterior_samples_f(wave[:, np.newaxis], n_samples,
-                                             kern=spex.kernel.copy())
-    samples = samples.squeeze()
+    samples = spex.model.sample_y(wave[:, np.newaxis], n_samples)
     min_sample_indices = samples.argmin(axis=0)
 
     # Exclude points at either end
@@ -81,9 +79,7 @@ def _velocity_blue_edge(feat_data, rest_wave, spex, n_samples=100,
     lam = mu - 3. * sigma
 
     # Calculate lambda error through sampling
-    samples = spex.model.posterior_samples_f(wave[:, np.newaxis], n_samples,
-                                             kern=spex.kernel.copy())
-    samples = samples.squeeze().T
+    samples = spex.model.sample_y(wave[:, np.newaxis], n_samples)
 
     lam_samples = []
     for sample in samples:

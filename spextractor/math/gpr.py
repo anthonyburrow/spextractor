@@ -1,8 +1,8 @@
-import numpy as np
-import GPy
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 
 
-def model(data, logger=None, wave_unit=None):
+def model(spectrum, logger=None):
     """Calculate the GPy model for given data.
 
     Uses GPy to determine a Gaussian process model based on given training
@@ -10,12 +10,8 @@ def model(data, logger=None, wave_unit=None):
 
     Parameters
     ----------
-    x : numpy.ndarray
-        Input training set.
-    y : numpy.ndarray
-        Output training set.
-    y_err : numpy.ndarray
-        Uncertainty in observed output `y`.
+    spectrum : Spectrum
+        Spectrum object to model.
 
     Returns
     -------
@@ -25,60 +21,38 @@ def model(data, logger=None, wave_unit=None):
         Kernel with optimized hyperparameters.
 
     """
-    x = data[:, 0]
-    y = data[:, 1]
-    y_err = data[:, 2]
+    kernel = (
+        ConstantKernel(0.5, (1e-2, 1e2)) *
+        Matern(length_scale=300., length_scale_bounds=(50., 1e4), nu=1.5) +
+        WhiteKernel(noise_level=1e-4, noise_level_bounds=(1e-5, 1e0))
+    )
 
-    if wave_unit is None or wave_unit == 'angstrom':
-        ls = 300.
-    elif wave_unit == 'micron':
-        ls = 300. * 1.e-4
+    # Add flux uncertainty to kernel diagonal
+    if spectrum.has_error:
+        alpha = spectrum.error**2
     else:
-        msg = f'{wave_unit} is an unrecognized wavelength unit'
-        logger.info(msg)
-        return
-
-    kernel = GPy.kern.Matern32(1, lengthscale=ls, variance=0.001)
-
-    model_uncertainty = np.any(y_err)
-    if model_uncertainty:
-        msg = ('Flux uncertainty detected - adding uncertainty to kernel')
-    else:
-        msg = ('No flux uncertainty detected - optimizing noise parameter')
-    logger.info(msg)
-
-    # Add flux errors as noise to kernel
-    kern = kernel
-    if model_uncertainty:
-        diag_vars = y_err**2 * np.eye(len(y_err))
-        kern_uncertainty = GPy.kern.Fixed(1, diag_vars)
-        kern = kernel + kern_uncertainty
+        alpha = 1e-6
 
     # Create model
-    m = GPy.models.GPRegression(x[:, np.newaxis], y[:, np.newaxis], kern)
-    m['Gaussian.noise.variance'][0] = 0.01
+    gpr = GaussianProcessRegressor(
+        kernel=kernel, alpha=alpha, normalize_y=False, n_restarts_optimizer=0
+    )
 
     logger.info('Created GP model')
 
     # Optimize model
-    if model_uncertainty:
-        m['.*fixed.variance'].constrain_fixed()
-        m.Gaussian_noise.fix(1e-6)
-
     logger.info('Optimizing hyperparameters...')
-    m.optimize(optimizer='bfgs')
 
-    logger.info(m)
+    X = spectrum.wave
+    y = spectrum.flux
+    gpr.fit(X.reshape(-1, 1), y)
 
-    if model_uncertainty:
-        # Use optimized hyperparameters with original kernel
-        kernel.lengthscale = kern.Mat32.lengthscale
-        kernel.variance = kern.Mat32.variance
+    logger.info(gpr.kernel_)
 
-    return m, kernel
+    return gpr
 
 
-def predict(x_pred, model, kernel):
-    mean, var = model.predict(x_pred[:, np.newaxis], kern=kernel.copy())
+def predict(X_pred, gpr):
+    y_pred, y_std = gpr.predict(X_pred.reshape(-1, 1), return_std=True)
 
-    return mean.squeeze(), var.squeeze()
+    return y_pred, y_std
