@@ -1,9 +1,6 @@
 import numpy as np
 from scipy.integrate import trapezoid
-from scipy import signal
 from scipy.optimize import curve_fit
-
-import sys
 
 from . import doppler
 from ..math import interpolate
@@ -17,10 +14,10 @@ def velocity(feat_data, rest_wave, spex, velocity_method=None,
 
     if velocity_method == 'minimum':
         return _velocity_minimum(feat_data, rest_wave, spex, *args, **kwargs)
-    if velocity_method == 'blue_edge':
+    elif velocity_method == 'blue_edge':
         return _velocity_blue_edge(feat_data, rest_wave, spex, *args, **kwargs)
     else:
-        sys.exit('Invalid velocity method given')
+        print('Invalid velocity method given')
 
 
 def _velocity_minimum(feat_data, rest_wave, spex, n_samples=100,
@@ -37,7 +34,7 @@ def _velocity_minimum(feat_data, rest_wave, spex, n_samples=100,
     lam_min = wave[min_index]
 
     # To estimate the error, sample possible spectra from the posterior
-    # and find the minima
+    # - For some reason, sample_y outputs shape (N_wave, N_samples=100)
     samples = spex.model.sample_y(wave[:, np.newaxis], n_samples)
     min_sample_indices = samples.argmin(axis=0)
 
@@ -101,16 +98,25 @@ def _velocity_blue_edge(feat_data, rest_wave, spex, n_samples=100,
     return vel, vel_err, draw_point
 
 
-def pEW(feat_data):
-    wave_range = feat_data[[0, -1], 0]
+def pEW(feat_data, gpr_model, n_samples=100):
+    wave = feat_data[:, 0]
+    flux = feat_data[:, 1]
+    endpoints = feat_data[[0, -1], :2]
 
-    continuum, _ = interpolate.linear(feat_data[:, 0], feat_data[[0, -1]])
-    frac_flux = 1 - feat_data[:, 1] / continuum
-    pEW = trapezoid(frac_flux, x=feat_data[:, 0])
+    continuum = np.interp(wave, endpoints[:, 0], endpoints[:, 1])
+    frac_flux = 1. - flux / continuum
+    pEW = trapezoid(frac_flux, x=wave)
 
-    pEW_stat_err = np.abs(signal.cwt(feat_data[:, 1], signal.ricker, [1])).mean()
-    pEW_cont_err = (wave_range[1] - wave_range[0]) * pEW_stat_err
-    pEW_err = np.sqrt(pEW_stat_err**2 + pEW_cont_err**2)
+    # For some reason, sample_y outputs shape (N_wave, N_samples=100)
+    samples = gpr_model.sample_y(wave[:, np.newaxis], n_samples).T
+    frac_flux = 1. - samples / continuum
+    pEW_err = trapezoid(frac_flux, x=wave, axis=1).std()
+
+    # Technically you should also come up with some sort of continuum
+    # error, then translate this into frac_flux error, then make this into
+    # an integrated pEW error for the continuum, then add in quadrature. Since
+    # continuum is unknown in the first place, this is just not worth it.
+    # Continuum is therefore assumed as rigid.
 
     return pEW, pEW_err
 

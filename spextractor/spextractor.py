@@ -196,8 +196,9 @@ class Spextractor:
             feat_data[:, 2] = gpr_std[mask]
 
             # Velocity calculation
-            vel, vel_err, draw_point = \
-                feature.velocity(feat_data, rest_wave, self, *args, **kwargs)
+            vel, vel_err, draw_point = feature.velocity(
+                feat_data, rest_wave, self, *args, **kwargs
+            )
 
             self.vel[_feature] = vel
             self.vel_err[_feature] = vel_err
@@ -220,7 +221,7 @@ class Spextractor:
                 )
 
             # pEW calculation
-            pew, pew_err = feature.pEW(feat_data)
+            pew, pew_err = feature.pEW(feat_data, self.model)
             self.pew[_feature] = pew
             self.pew_err[_feature] = pew_err
 
