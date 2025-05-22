@@ -17,7 +17,7 @@ Ia), this code is adaptable to other spectral types and features.
 - **Uncertainty Estimation**: Offers statistical error estimates for measurements.
 - **Extensibility**: Easily adaptable to different spectral features and types beyond SNe Ia.
 
-![Example Type Ia Spectrum](examples/Ia_example.png)
+![Example Type Ia Spectrum](example/Ia_example.png)
 
 ---
 
