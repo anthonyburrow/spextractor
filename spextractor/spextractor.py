@@ -198,6 +198,14 @@ class Spextractor:
             self.vel[feature.name] = vel
             self.vel_err[feature.name] = vel_err
 
+            if np.isnan(vel) or vel < 0.:
+                self.pew[feature.name] = np.nan
+                self.pew_err[feature.name] = np.nan
+                continue
+
+            self.vel[feature.name] = vel
+            self.vel_err[feature.name] = vel_err
+
             if self._plot:
                 self._ax.axvline(
                     draw_point[0], ymax=draw_point[1],
@@ -209,8 +217,12 @@ class Spextractor:
                 )
 
             pew, pew_err = feature.pEW(*args, **kwargs)
+
             self.pew[feature.name] = pew
             self.pew_err[feature.name] = pew_err
+
+            if np.isnan(pew) or pew < 0.:
+                continue
 
             if self._plot:
                 data = feature.feature_data

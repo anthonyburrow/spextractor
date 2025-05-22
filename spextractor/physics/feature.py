@@ -2,7 +2,7 @@ import numpy as np
 from scipy.integrate import trapezoid
 from scipy.optimize import curve_fit
 
-from SpectrumCore.util.interpolate import interp_linear
+# from SpectrumCore.util.interpolate import interp_linear
 
 from . import doppler
 from ..math.functions import gaussian
@@ -57,7 +57,7 @@ class Feature:
 
         # If clear feature not found
         if min_ind == 0 or min_ind == len(flux) - 1:
-            return np.nan, np.nan
+            return np.nan, np.nan, (np.nan, np.nan)
 
         lam_min = wave[min_ind]
 
@@ -69,7 +69,7 @@ class Feature:
         # Exclude points at either end
         min_sample_indices = min_sample_indices[1:-1]
         if len(min_sample_indices) == 0:
-            return np.nan, np.nan
+            return np.nan, np.nan, (np.nan, np.nan)
 
         lam_min_err = np.std(wave[min_sample_indices])
 
