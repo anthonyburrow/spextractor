@@ -21,14 +21,14 @@ Create the Spextractor instance.
 - Close the plot when finished with selection.
 '''
 
-spex = Spextractor(fn, z=z, plot=True, manual_range=True)
+spex = Spextractor(fn, z=z, plot=True)
 
 '''
 Continue as normal from here with the updated feature ranges.
 '''
-
 spex.create_model(downsampling=3.)
-spex.process()
+
+spex.process(manual_range=True)
 
 si = 'Si II 6150A'
 vsi = spex.vel[si]
@@ -43,3 +43,5 @@ plt.tight_layout()
 fig.savefig('Ia_example.png', dpi=300)
 
 plt.close('all')
+
+print(spex.vel)

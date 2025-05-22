@@ -39,11 +39,11 @@ Do feature calculations (velocity, pEW, depth, etc.).
 - Keys to dictionary attributes are the strings again found in the "lines.py",
   such that each feature has an associated velocity, pEW, etc..
 '''
-si = 'Si II 6150A'
-spex.process()
+features = ('Si II 6150A', 'Si II 5800A')
+spex.process(features)
 
-vsi = spex.vel[si]
-vsi_err = spex.vel_err[si]
+vsi = spex.vel[features[0]]
+vsi_err = spex.vel_err[features[0]]
 print(f'vsi = {vsi:.3f} +- {vsi_err:.3f}')
 
 '''

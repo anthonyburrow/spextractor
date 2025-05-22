@@ -12,7 +12,6 @@ from spextractor import Spextractor
 fn = './data/SN2006mo.dat'
 z = 0.0459
 
-
 spex = Spextractor(fn, z=z, plot=True)
 spex.create_model(downsampling=3.)
 
@@ -25,13 +24,11 @@ params = {
 }
 spex.process(**params)
 
-
 si = 'Si II 6150A'
 
 vsi = spex.vel[si]
 vsi_err = spex.vel_err[si]
 print(f'vsi = {vsi:.3f} +- {vsi_err:.3f}')
-
 
 fig, ax = spex.plot
 

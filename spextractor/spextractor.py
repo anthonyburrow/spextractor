@@ -1,21 +1,21 @@
 import numpy as np
 import matplotlib.pyplot as plt
-import time
 
 from SpectrumCore.Spectrum import Spectrum
 from SpectrumCore.util.interpolate import interp_linear
 
 from .util.log import setup_log
 from .util.manual import ManualRange
-from .physics import feature
-from .physics.lines import get_features
+from .physics.feature import Feature
+from .physics.lines import sn_types, sn_lines
 from .math import gpr
 
 
 class Spextractor:
 
-    def __init__(self, data, sn_type=None, manual_range=False, wave_unit=None,
-                 plot=False, log=False, *args, **kwargs):
+    def __init__(
+        self, data, wave_unit=None, plot=False, log=False, *args, **kwargs
+    ):
         """Constructor for the Spextractor class.
 
         Parameters
@@ -73,16 +73,6 @@ class Spextractor:
         self._plot = plot
         self._fig, self._ax = None, None
 
-        # Define features
-        if sn_type is None:
-            sn_type = 'Ia'
-        self._features = get_features(sn_type)
-
-        if manual_range:
-            self._logger.info('Manually changing feature bounds...')
-            m = ManualRange(self.spectrum.data, self._features, self._logger)
-            self._features = m.def_lines
-
         # Undefined instance attributes
         self._model = None
 
@@ -116,9 +106,6 @@ class Spextractor:
 
         self._model = model
 
-        if self._plot:
-            self._setup_plot()
-
         return model
 
     def reset_model(self):
@@ -141,7 +128,10 @@ class Spextractor:
         """
         return gpr.predict(X_pred, self.model)
 
-    def process(self, features=None, predict_res=2000, *args, **kwargs):
+    def process(
+            self, features: tuple[str] = None, predict_res: int = 2000,
+            sn_type: str = None, manual_range: bool = False, *args, **kwargs
+    ):
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
 
@@ -157,59 +147,56 @@ class Spextractor:
         **kwargs:
             velocity_method
         """
-        t0 = time.time()
-
-        gpr_wave_pred = np.linspace(
+        gpr_wave = np.linspace(
             self.spectrum.wave_start, self.spectrum.wave_end, predict_res
         )
-        gpr_mean, gpr_std = gpr.predict(gpr_wave_pred, self.model)
+        gpr_mean, gpr_std = gpr.predict(gpr_wave, self.model)
+        gpr_spectrum = Spectrum(np.c_[gpr_wave, gpr_mean, gpr_std])
 
         if features is None:
-            features = self._features
+            if sn_type is None:
+                sn_type = 'Ia'
+            features = sn_types[sn_type]
 
-        for _feature in features:
-            rest_wave = self._features[_feature]['rest']
+        feature_list = []
+        for feature in features:
+            feature_info = sn_lines[feature]
 
-            lo_range = self._features[_feature]['lo_range']
-            hi_range = self._features[_feature]['hi_range']
+            lo_range = feature_info['lo_range']
+            hi_range = feature_info['hi_range']
 
-            lo_mask = (lo_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= lo_range[1])
-            hi_mask = (hi_range[0] <= gpr_wave_pred) & (gpr_wave_pred <= hi_range[1])
-
-            # If the feature isn't recognized in the spectrum
-            if not (np.any(lo_mask) and np.any(hi_mask)):
-                self.vel[_feature] = np.nan
-                self.vel_err[_feature] = np.nan
-                self.pew[_feature] = np.nan
-                self.pew_err[_feature] = np.nan
+            if lo_range[0] < gpr_spectrum.wave_start:
+                continue
+            if gpr_spectrum.wave_end < hi_range[1]:
                 continue
 
-            lo_max_ind = gpr_mean[lo_mask].argmax()
-            hi_max_ind = gpr_mean[hi_mask].argmax()
-
-            lo_max_wave = gpr_wave_pred[lo_mask][lo_max_ind]
-            hi_max_wave = gpr_wave_pred[hi_mask][hi_max_ind]
-
-            mask = (lo_max_wave <= gpr_wave_pred) & (gpr_wave_pred <= hi_max_wave)
-            feat_data = np.zeros((mask.sum(), 3))
-            feat_data[:, 0] = gpr_wave_pred[mask]
-            feat_data[:, 1] = gpr_mean[mask]
-            feat_data[:, 2] = gpr_std[mask]
-
-            # Velocity calculation
-            vel, vel_err, draw_point = feature.velocity(
-                feat_data, rest_wave, self, *args, **kwargs
+            feature_obj = Feature(
+                name=feature,
+                rest_wave=feature_info['rest'],
+                spectrum=gpr_spectrum,
+                gpr_model=self.model,
             )
 
-            self.vel[_feature] = vel
-            self.vel_err[_feature] = vel_err
+            feature_obj.update_endpoints(lo_range, hi_range)
 
-            if np.isnan(vel):
-                self.pew[_feature] = 0.
-                self.pew_err[_feature] = 0.
-                self.depth[_feature] = 0.
-                self.depth_err[_feature] = 0.
-                continue
+            feature_list.append(feature_obj)
+
+        if manual_range:
+            self._logger.info('Manually changing feature bounds...')
+            if self._fig is not None:
+                self._fig, self._ax = None
+                plt.close('all')
+
+            _ = ManualRange(self.spectrum, feature_list, self._logger)
+
+        if self._plot and self._fig is None:
+            self._setup_plot()
+
+        for feature in feature_list:
+            vel, vel_err, draw_point = feature.velocity(*args, **kwargs)
+
+            self.vel[feature.name] = vel
+            self.vel_err[feature.name] = vel_err
 
             if self._plot:
                 self._ax.axvline(
@@ -217,40 +204,27 @@ class Spextractor:
                     color='k', linestyle='--'
                 )
                 self._ax.text(
-                    draw_point[0] + 30., 0.015, _feature,
+                    draw_point[0] + 30., 0.015, feature.name,
                     rotation=90., fontsize=8.
                 )
 
-            # pEW calculation
-            pew, pew_err = feature.pEW(feat_data, self.model)
-            self.pew[_feature] = pew
-            self.pew_err[_feature] = pew_err
+            pew, pew_err = feature.pEW(*args, **kwargs)
+            self.pew[feature.name] = pew
+            self.pew_err[feature.name] = pew_err
 
             if self._plot:
-                feat_range = feat_data[[0, -1], :2]
-                continuum = interp_linear(feat_data[:, 0], feat_range)
+                data = feature.feature_data
+                feat_range = data[[0, -1], :2]
+                continuum = interp_linear(data[:, 0], feat_range)
 
                 self._ax.scatter(
                     feat_range[:, 0], feat_range[:, 1], color='k', s=30
                 )
                 self._ax.fill_between(
-                    feat_data[:, 0], feat_data[:, 1], continuum,
+                    data[:, 0], data[:, 1], continuum,
                     color='#00a3cc', alpha=0.3
                 )
 
-            # Line depth calculation
-            depth, depth_err = feature.depth(feat_data)
-            self.depth[_feature] = depth
-            self.depth_err[_feature] = depth_err
-
-            if depth < 0.:
-                msg = (
-                    f'Calculated unphysical line depth for {_feature}:'
-                    f'{depth:.3f} +- {depth_err:.3f}'
-                )
-                self._logger.warning(msg)
-
-        self._logger.info(f'Calculations took {time.time() - t0:.3f} s.')
         self._logger.handlers = []   # Close log handlers between instantiations
 
     @property
@@ -289,6 +263,8 @@ class Spextractor:
 
     @property
     def plot(self):
+        if self._plot and self._fig is None:
+            self._setup_plot()
         return self._fig, self._ax
 
     def _preprocess_spectrum(
@@ -344,18 +320,16 @@ class Spextractor:
 
     def _setup_plot(self):
         """Setup the spectrum plot."""
-        if self._fig is not None:
-            return
-
         self._fig, self._ax = plt.subplots()
 
         self._ax.set_xlabel(r'$\mathrm{Rest\ wavelength}\ (\AA)$', size=14)
         self._ax.set_ylabel(r'$\mathrm{Normalized\ flux}$', size=14)
-        self._ax.set_ylim(0, 1)
+        self._ax.set_ylim(0., 1.)
 
         wave = self.spectrum.wave
         flux = self.spectrum.flux
 
+        # Display (preprocessed) original data
         self._ax.plot(
             wave, flux, color='k', alpha=0.7, lw=1, zorder=0
         )

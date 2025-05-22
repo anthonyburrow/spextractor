@@ -8,145 +8,172 @@ from . import doppler
 from ..math.functions import gaussian
 
 
-def velocity(feat_data, rest_wave, spex, velocity_method=None,
-             *args, **kwargs):
-    if velocity_method is None:
-        velocity_method = 'minimum'
+class Feature:
 
-    if velocity_method == 'minimum':
-        return _velocity_minimum(feat_data, rest_wave, spex, *args, **kwargs)
-    elif velocity_method == 'blue_edge':
-        return _velocity_blue_edge(feat_data, rest_wave, spex, *args, **kwargs)
-    else:
-        print('Invalid velocity method given')
+    def __init__(self, name: str, rest_wave: float, spectrum, gpr_model):
+        self.name = name
+        self.rest_wave = rest_wave
 
+        self.spectrum = spectrum
+        self.gpr_model = gpr_model
 
-def _velocity_minimum(feat_data, rest_wave, spex, n_samples=100,
-                      *args, **kwargs):
-    wave = feat_data[:, 0]
-    flux = feat_data[:, 1]
+        self.wave_left = None
+        self.wave_right = None
 
-    min_index = flux.argmin()
+        self.feature_data = None
 
-    # If clear feature not found
-    if min_index == 0 or min_index == len(flux) - 1:
-        return np.nan, np.nan
+    def update_endpoints(self, lo_range: tuple[float], hi_range: tuple[float]):
+        left_data = self.spectrum.between(lo_range)
+        left_ind = left_data[:, 1].argmax()
+        self.wave_left = left_data[left_ind, 0]
 
-    lam_min = wave[min_index]
+        right_data = self.spectrum.between(hi_range)
+        right_ind = right_data[:, 1].argmax()
+        self.wave_right = right_data[right_ind, 0]
 
-    # To estimate the error, sample possible spectra from the posterior
-    # - For some reason, sample_y outputs shape (N_wave, N_samples=100)
-    samples = spex.model.sample_y(wave[:, np.newaxis], n_samples)
-    min_sample_indices = samples.argmin(axis=0)
+        self.reset_feature_data()
 
-    # Exclude points at either end
-    min_sample_indices = min_sample_indices[1:-1]
-    if len(min_sample_indices) == 0:
-        return np.nan, np.nan
-
-    lam_min_err = np.std(wave[min_sample_indices])
-
-    vel, vel_err = doppler.velocity(lam_min, lam_min_err, rest_wave)
-
-    draw_point = lam_min, flux.min()
-
-    return vel, vel_err, draw_point
-
-
-def _velocity_blue_edge(feat_data, rest_wave, spex, n_samples=100,
-                        feat_profile=None, profile_params=None,
-                        *args, **kwargs):
-    wave = feat_data[:, 0]
-    flux = feat_data[:, 1]
-
-    if feat_profile is None:
-        feat_profile = gaussian
-
-    if profile_params is None:
-        mu = wave[flux.argmin()]
-        sigma = 0.5 * (wave[-1] - wave[0])
-        profile_params = (mu, sigma, -0.1, 0.5)
-        bounds = (
-            (wave[0], 0., -2., 0.),
-            (wave[-1], 5. * sigma, 0., 1.)
+    def reset_feature_data(self):
+        self.feature_data = self.spectrum.between(
+            (self.wave_left, self.wave_right)
         )
 
-    params, _ = curve_fit(feat_profile, wave, flux,
-                          p0=profile_params, bounds=bounds)
-    mu, sigma = params[:2]
-    lam = mu - 3. * sigma
+    def velocity(self, velocity_method=None, *args, **kwargs):
+        if velocity_method is None:
+            velocity_method = 'minimum'
 
-    # Calculate lambda error through sampling
-    samples = spex.model.sample_y(wave[:, np.newaxis], n_samples)
+        if velocity_method == 'minimum':
+            return self._velocity_minimum(*args, **kwargs)
+        elif velocity_method == 'blue_edge':
+            return self._velocity_blue_edge(*args, **kwargs)
+        else:
+            print('Invalid velocity method given')
 
-    lam_samples = []
-    for sample in samples:
-        params_err, _ = curve_fit(feat_profile, wave, sample,
-                                  p0=profile_params, bounds=bounds)
-        mu_err, sigma_err = params_err[:2]
-        lam_samples.append(mu_err - 3. * sigma_err)
+    def _velocity_minimum(self, n_samples=100, *args, **kwargs):
+        wave = self.feature_data[:, 0]
+        flux = self.feature_data[:, 1]
 
-    lam_err = np.std(lam_samples)
+        min_ind = flux.argmin()
 
-    # Calculate velocity
-    vel, vel_err = doppler.velocity(lam, lam_err, rest_wave)
+        # If clear feature not found
+        if min_ind == 0 or min_ind == len(flux) - 1:
+            return np.nan, np.nan
 
-    if spex._plot:
-        spex._ax.plot(wave, feat_profile(wave, *params), 'b-')
+        lam_min = wave[min_ind]
 
-    draw_point = lam, feat_profile(lam, *params)
+        # To estimate the error, sample possible spectra from the posterior
+        # - For some reason, sample_y outputs shape (N_wave, N_samples=100)
+        samples = self.gpr_model.sample_y(wave[:, np.newaxis], n_samples)
+        min_sample_indices = samples.argmin(axis=0)
 
-    return vel, vel_err, draw_point
+        # Exclude points at either end
+        min_sample_indices = min_sample_indices[1:-1]
+        if len(min_sample_indices) == 0:
+            return np.nan, np.nan
 
+        lam_min_err = np.std(wave[min_sample_indices])
 
-def pEW(feat_data, gpr_model, n_samples=100):
-    wave = feat_data[:, 0]
-    flux = feat_data[:, 1]
-    endpoints = feat_data[[0, -1], :2]
+        vel, vel_err = doppler.velocity(lam_min, lam_min_err, self.rest_wave)
 
-    continuum = np.interp(wave, endpoints[:, 0], endpoints[:, 1])
-    frac_flux = 1. - flux / continuum
-    pEW = trapezoid(frac_flux, x=wave)
+        draw_point = lam_min, flux.min()
 
-    # For some reason, sample_y outputs shape (N_wave, N_samples=100)
-    samples = gpr_model.sample_y(wave[:, np.newaxis], n_samples).T
-    frac_flux = 1. - samples / continuum
-    pEW_err = trapezoid(frac_flux, x=wave, axis=1).std()
+        return vel, vel_err, draw_point
 
-    # Technically you should also come up with some sort of continuum
-    # error, then translate this into frac_flux error, then make this into
-    # an integrated pEW error for the continuum, then add in quadrature. Since
-    # continuum is unknown in the first place, this is just not worth it.
-    # Continuum is therefore assumed as rigid.
+    def _velocity_blue_edge(
+        self, n_samples=100, feat_profile=None, profile_params=None,
+        *args, **kwargs
+    ):
+        wave = self.feature_data[:, 0]
+        flux = self.feature_data[:, 1]
 
-    return pEW, pEW_err
+        if feat_profile is None:
+            feat_profile = gaussian
 
+        if profile_params is None:
+            mu = wave[flux.argmin()]
+            sigma = 0.5 * (wave[-1] - wave[0])
+            profile_params = (mu, sigma, -0.1, 0.5)
+            bounds = (
+                (wave[0], 0., -2., 0.),
+                (wave[-1], 5. * sigma, 0., 1.)
+            )
 
-def depth(feat_data):
-    """Calculate line depth for feature
+        params, _ = curve_fit(
+            feat_profile, wave, flux, p0=profile_params, bounds=bounds
+        )
+        mu, sigma = params[:2]
+        lam = mu - 3. * sigma
 
-    Args:
-        wave (ndarray): Wavelength values of feature.
-        flux (ndarray): Flux values of feature.
-        flux_err (ndarray): Error in flux values of feature.
+        # Calculate lambda error through sampling
+        samples = self.gpr_model.sample_y(wave[:, np.newaxis], n_samples).T
 
-    Returns:
-        depth (float): Depth of line from pseudo-continuum.
-        depth_err (float): Error in depth.
+        lam_samples = []
+        for sample in samples:
+            params_err, _ = curve_fit(
+                feat_profile, wave, sample, p0=profile_params, bounds=bounds
+            )
+            mu_err, sigma_err = params_err[:2]
+            lam_samples.append(mu_err - 3. * sigma_err)
 
-    """
-    feat_range = feat_data[[0, -1]]
+        lam_err = np.std(lam_samples)
 
-    min_ind = feat_data[:, 1].argmin()
+        # Calculate velocity
+        vel, vel_err = doppler.velocity(lam, lam_err, self.rest_wave)
 
-    if min_ind == 0 or min_ind == len(feat_data) - 1:
-        return np.nan
+        # if spex._plot:
+        #     spex._ax.plot(wave, feat_profile(wave, *params), 'b-')
 
-    min_wave = np.asarray([feat_data[min_ind, 0]])
-    cont, cont_err = interp_linear(min_wave, feat_range)
+        draw_point = lam, feat_profile(lam, *params)
 
-    # Continuum error is extremely large, so depth_err really means nothing
-    depth = cont - feat_data[min_ind, 1]
-    depth_err = np.sqrt(feat_data[min_ind, 2]**2 + cont_err**2)
+        return vel, vel_err, draw_point
 
-    return depth, depth_err
+    def pEW(self, n_samples=100, *args, **kwargs):
+        wave = self.feature_data[:, 0]
+        flux = self.feature_data[:, 1]
+        endpoints = self.feature_data[[0, -1], :2]
+
+        continuum = np.interp(wave, endpoints[:, 0], endpoints[:, 1])
+        frac_flux = 1. - flux / continuum
+        pEW = trapezoid(frac_flux, x=wave)
+
+        # For some reason, sample_y outputs shape (N_wave, N_samples=100)
+        samples = self.gpr_model.sample_y(wave[:, np.newaxis], n_samples).T
+        frac_flux = 1. - samples / continuum
+        pEW_err = trapezoid(frac_flux, x=wave, axis=1).std()
+
+        # Technically you should also come up with some sort of continuum
+        # error, then translate this into frac_flux error, then make this into
+        # an integrated pEW error for the continuum, then add in quadrature. Since
+        # continuum is unknown in the first place, this is just not worth it.
+        # Continuum is therefore assumed as rigid.
+
+        return pEW, pEW_err
+
+    # def depth(feat_data):
+    #     """Calculate line depth for feature
+
+    #     Args:
+    #         wave (ndarray): Wavelength values of feature.
+    #         flux (ndarray): Flux values of feature.
+    #         flux_err (ndarray): Error in flux values of feature.
+
+    #     Returns:
+    #         depth (float): Depth of line from pseudo-continuum.
+    #         depth_err (float): Error in depth.
+
+    #     """
+    #     feat_range = feat_data[[0, -1]]
+
+    #     min_ind = feat_data[:, 1].argmin()
+
+    #     if min_ind == 0 or min_ind == len(feat_data) - 1:
+    #         return np.nan
+
+    #     min_wave = np.asarray([feat_data[min_ind, 0]])
+    #     cont, cont_err = interp_linear(min_wave, feat_range)
+
+    #     # Continuum error is extremely large, so depth_err really means nothing
+    #     depth = cont - feat_data[min_ind, 1]
+    #     depth_err = np.sqrt(feat_data[min_ind, 2]**2 + cont_err**2)
+
+    #     return depth, depth_err
