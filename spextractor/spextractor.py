@@ -3,12 +3,13 @@ import matplotlib.pyplot as plt
 import time
 
 from SpectrumCore.Spectrum import Spectrum
+from SpectrumCore.util.interpolate import interp_linear
 
 from .util.log import setup_log
 from .util.manual import ManualRange
 from .physics import feature
 from .physics.lines import get_features
-from .math import interpolate, gpr
+from .math import gpr
 
 
 class Spextractor:
@@ -226,8 +227,8 @@ class Spextractor:
             self.pew_err[_feature] = pew_err
 
             if self._plot:
-                feat_range = feat_data[[0, -1]]
-                continuum, _ = interpolate.linear(feat_data[:, 0], feat_range)
+                feat_range = feat_data[[0, -1], :2]
+                continuum = interp_linear(feat_data[:, 0], feat_range)
 
                 self._ax.scatter(
                     feat_range[:, 0], feat_range[:, 1], color='k', s=30

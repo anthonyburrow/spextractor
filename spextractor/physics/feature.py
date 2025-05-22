@@ -2,8 +2,9 @@ import numpy as np
 from scipy.integrate import trapezoid
 from scipy.optimize import curve_fit
 
+from SpectrumCore.util.interpolate import interp_linear
+
 from . import doppler
-from ..math import interpolate
 from ..math.functions import gaussian
 
 
@@ -142,7 +143,7 @@ def depth(feat_data):
         return np.nan
 
     min_wave = np.asarray([feat_data[min_ind, 0]])
-    cont, cont_err = interpolate.linear(min_wave, feat_range)
+    cont, cont_err = interp_linear(min_wave, feat_range)
 
     # Continuum error is extremely large, so depth_err really means nothing
     depth = cont - feat_data[min_ind, 1]
