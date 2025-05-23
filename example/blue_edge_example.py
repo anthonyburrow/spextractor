@@ -32,8 +32,6 @@ print(f'vsi = {vsi:.3f} +- {vsi_err:.3f}')
 
 fig, ax = spex.plot
 
-ax.set_title('Ia_example')
-
 plt.tight_layout()
 fig.savefig('Ia_example.png', dpi=300)
 

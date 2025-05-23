@@ -3,6 +3,7 @@ import matplotlib.pyplot as plt
 
 from SpectrumCore.Spectrum import Spectrum
 from SpectrumCore.util.interpolate import interp_linear
+from SpectrumCore.plot import basic_spectrum
 
 from .util.log import setup_log
 from .util.manual import ManualRange
@@ -332,7 +333,7 @@ class Spextractor:
 
     def _setup_plot(self):
         """Setup the spectrum plot."""
-        self._fig, self._ax = plt.subplots()
+        self._fig, self._ax = basic_spectrum()
 
         self._ax.set_xlabel(r'$\mathrm{Rest\ wavelength}\ (\AA)$', size=14)
         self._ax.set_ylabel(r'$\mathrm{Normalized\ flux}$', size=14)

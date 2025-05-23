@@ -54,8 +54,6 @@ Retrieve the spectrum plot if it was created.
 '''
 fig, ax = spex.plot
 
-ax.set_title('Ia_example')
-
 plt.tight_layout()
 fig.savefig('Ia_example.png', dpi=300)
 
