@@ -14,6 +14,12 @@ def file_optical():
 
 
 @pytest.fixture
+def file_NIR():
+    spectrum_path = f'{_data_dir}/SN2011fe.dat'
+    return spectrum_path
+
+
+@pytest.fixture
 def plot_dir():
     return _plot_dir
 

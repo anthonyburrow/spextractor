@@ -48,7 +48,7 @@ def test_process(file_optical):
     SiII = 'Si II 6150A'
     spex.process(features=(SiII,))
 
-    assert 0. <= spex.vel[SiII] < 30.
+    assert 1. <= spex.vel[SiII] < 30.
     assert 0. <= spex.vel_err[SiII] < spex.vel[SiII]
     assert 0. < spex.pew[SiII] < 200.
     assert 0. < spex.pew_err[SiII] < spex.pew[SiII]

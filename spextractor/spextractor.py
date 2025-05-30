@@ -24,13 +24,6 @@ class Spextractor:
         data : str, numpy.ndarray
             Spectral data (can be unnormalized) where columns are wavelengths
             (Angstroms), flux, and flux uncertainty.
-        sn_type : str, optional
-            Type of SN, used to determine which features are able to be
-            processed. This must be a key in "./physics/lines.py" ('Ia', 'Ib',
-            or 'Ic'). If None, 'Ia' is used by default.
-        manual_range : bool, optional
-            Used for manually setting feature minimum/maximum ranges via a
-            spectrum plot. False by default.
         plot : bool, optional
             Create and hold a plot of the data, GPR, and velocity/pEW
             information that may be calculated. False by default.
@@ -125,7 +118,8 @@ class Spextractor:
             A tuple consisting of the mean and uncertainty values calculated at
             each of the prediction points.
         """
-        return gpr.predict(X_pred, self.model)
+        wave_factor = self.spectrum.wave_factor
+        return gpr.predict(X_pred * wave_factor, self.model)
 
     def process(
             self, features: tuple[str] = None, predict_res: int = 2000,
@@ -142,6 +136,13 @@ class Spextractor:
             default, every feature in "lines.py" is processed.
         predict_res : int, optional
             Sample size (resolution) of values predicted by GPR model.
+        sn_type : str, optional
+            Type of SN, used to determine which features are able to be
+            processed. This must be a key in "./physics/lines.py" ('Ia', 'Ib',
+            or 'Ic'). If None, 'Ia' is used by default.
+        manual_range : bool, optional
+            Used for manually setting feature minimum/maximum ranges via a
+            spectrum plot. False by default.
 
         **kwargs:
             velocity_method
@@ -205,13 +206,14 @@ class Spextractor:
             self.vel[feature.name] = vel
             self.vel_err[feature.name] = vel_err
 
+            wave_factor = self.spectrum.wave_factor
             if self._plot:
                 self._ax.axvline(
-                    draw_point[0], ymax=draw_point[1],
+                    draw_point[0] / wave_factor, ymax=draw_point[1],
                     color='k', linestyle='--'
                 )
                 self._ax.text(
-                    draw_point[0] + 30., 0.015, feature.name,
+                    (draw_point[0] + 30.) / wave_factor, 0.015, feature.name,
                     rotation=90., fontsize=8.
                 )
 
@@ -229,10 +231,11 @@ class Spextractor:
                 continuum = interp_linear(data[:, 0], feat_range)
 
                 self._ax.scatter(
-                    feat_range[:, 0], feat_range[:, 1], color='k', s=30
+                    feat_range[:, 0] / wave_factor, feat_range[:, 1],
+                    color='k', s=30
                 )
                 self._ax.fill_between(
-                    data[:, 0], data[:, 1], continuum,
+                    data[:, 0] / wave_factor, data[:, 1], continuum,
                     color='#00a3cc', alpha=0.3
                 )
 
@@ -349,12 +352,17 @@ class Spextractor:
         """Setup the spectrum plot."""
         self._fig, self._ax = basic_spectrum()
 
-        self._ax.set_xlabel(r'$\mathrm{Rest\ wavelength}\ (\AA)$', size=14)
+        wave_factor = self.spectrum.wave_factor
+        wave = self.spectrum.wave / wave_factor
+        flux = self.spectrum.flux
+
+        if wave_factor == 1.:
+            self._ax.set_xlabel(r'$\mathrm{Rest\ wavelength}\ (\AA)$', size=14)
+        elif wave_factor == 1e4:
+            self._ax.set_xlabel(r'$\mathrm{Rest\ wavelength}\ (\mu m)$', size=14)
+
         self._ax.set_ylabel(r'$\mathrm{Normalized\ flux}$', size=14)
         self._ax.set_ylim(0., 1.)
-
-        wave = self.spectrum.wave
-        flux = self.spectrum.flux
 
         # Display (preprocessed) original data
         self._ax.plot(
@@ -372,8 +380,12 @@ class Spextractor:
             self.spectrum.wave_start, self.spectrum.wave_end, 2000
         )
         mean, std = gpr.predict(wave_pred, self.model)
+        wave_pred /= wave_factor
 
-        self._ax.plot(wave_pred, mean, color='red', zorder=2, lw=1)
+        self._ax.plot(
+            wave_pred, mean,
+            color='red', zorder=2, lw=1
+        )
         self._ax.fill_between(
             wave_pred, mean - std, mean + std,
             alpha=0.3, color='red', zorder=1
