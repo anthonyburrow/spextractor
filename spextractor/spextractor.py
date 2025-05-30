@@ -290,6 +290,10 @@ class Spextractor:
     def flux_denormalized(self):
         return self.spectrum.flux_denormalized
 
+    @property
+    def flux_norm(self):
+        return self.spectrum.flux_norm
+
     def _preprocess_spectrum(
         self, z: float = None, wave_range: tuple[float] = None,
         host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,
