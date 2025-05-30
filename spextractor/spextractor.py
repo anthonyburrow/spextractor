@@ -278,6 +278,18 @@ class Spextractor:
             self._setup_plot()
         return self._fig, self._ax
 
+    @property
+    def wave(self):
+        return self.spectrum.wave
+
+    @property
+    def flux(self):
+        return self.spectrum.flux
+
+    @property
+    def flux_denormalized(self):
+        return self.spectrum.flux_denormalized
+
     def _preprocess_spectrum(
         self, z: float = None, wave_range: tuple[float] = None,
         host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,
