@@ -3,8 +3,8 @@ import numpy as np
 from spextractor import Spextractor
 
 
-def test_initialization(sample_file):
-    spex = Spextractor(sample_file)
+def test_initialization(file_optical):
+    spex = Spextractor(file_optical)
 
     wave = spex.spectrum.wave
     flux = spex.spectrum.flux
@@ -15,12 +15,12 @@ def test_initialization(sample_file):
     assert error[0] == 1.1478313e-16 / spex.spectrum._flux_norm
 
 
-def test_preprocessing(sample_file):
+def test_preprocessing(file_optical):
     params = {
         'z': 0.0001,
     }
 
-    spex = Spextractor(sample_file, **params)
+    spex = Spextractor(file_optical, **params)
 
     wave = spex.spectrum.wave
     flux = spex.spectrum.flux
@@ -29,8 +29,8 @@ def test_preprocessing(sample_file):
     assert flux.max() == 1.
 
 
-def test_modeling(sample_file):
-    spex = Spextractor(sample_file)
+def test_modeling(file_optical):
+    spex = Spextractor(file_optical)
 
     spex.create_model(downsampling=3.)
 
@@ -40,8 +40,8 @@ def test_modeling(sample_file):
     mean, var = spex.predict(wave_pred)
 
 
-def test_process(sample_file):
-    spex = Spextractor(sample_file)
+def test_process(file_optical):
+    spex = Spextractor(file_optical)
 
     spex.create_model(downsampling=3.)
 
