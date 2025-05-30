@@ -15,7 +15,7 @@ from .math import gpr
 class Spextractor:
 
     def __init__(
-        self, data, wave_unit=None, plot=False, log=False, *args, **kwargs
+        self, data, plot=False, log=False, *args, **kwargs
     ):
         """Constructor for the Spextractor class.
 
@@ -31,9 +31,6 @@ class Spextractor:
         manual_range : bool, optional
             Used for manually setting feature minimum/maximum ranges via a
             spectrum plot. False by default.
-        wave_unit : str, optional
-            Unit of wavelength for the input data. Available units are
-            'angstrom' and 'micron'. If None, this defaults to 'angstrom'.
         plot : bool, optional
             Create and hold a plot of the data, GPR, and velocity/pEW
             information that may be calculated. False by default.
@@ -41,6 +38,9 @@ class Spextractor:
             Determines whether or not a file is created to log console output.
 
         **kwargs
+            wave_unit : str, optional
+                Unit of wavelength for the input data. Available units are
+                'angstrom' and 'micron'. If None, this defaults to 'angstrom'.
             z : float, optional
                 Redshift value for rest-frame wavelength correction.
             wave_range : tuple, optional
@@ -65,10 +65,8 @@ class Spextractor:
         self._logger = setup_log(filename=log_fn, log_to_file=log,
                                  *args, **kwargs)
 
-        self.spectrum = Spectrum(data)
+        self.spectrum = Spectrum(data, *args, **kwargs)
         self._preprocess_spectrum(*args, **kwargs)
-
-        self._wave_unit = wave_unit
 
         # Setup primary plot of (processed but unnormalized) data
         self._plot = plot
