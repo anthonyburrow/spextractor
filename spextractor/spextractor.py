@@ -34,6 +34,8 @@ class Spextractor:
             wave_unit : str, optional
                 Unit of wavelength for the input data. Available units are
                 'angstrom' and 'micron'. If None, this defaults to 'angstrom'.
+            remove_telluric: bool, optional
+                Remove telluric features. Default is False.
             z : float, optional
                 Redshift value for rest-frame wavelength correction.
             wave_range : tuple, optional
@@ -299,13 +301,14 @@ class Spextractor:
 
     def _preprocess_spectrum(
         self, z: float = None, wave_range: tuple[float] = None,
-        host_EBV=None, host_RV=None, MW_EBV=None, MW_RV=3.1,
-        *args, **kwargs
+        remove_telluric=False, host_EBV=None, host_RV=None, MW_EBV=None,
+        MW_RV=3.1, *args, **kwargs
     ):
         self.spectrum.remove_nans()
         self.spectrum.remove_nonpositive()
 
-        self.spectrum.remove_telluric()   # TODO: AFTER MANGLING
+        if remove_telluric:
+            self.spectrum.remove_telluric()   # TODO: AFTER MANGLING
 
         if z is not None and z != 0.:
             self.spectrum.deredshift(z)
