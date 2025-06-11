@@ -1,8 +1,9 @@
 import numpy as np
 from scipy.integrate import trapezoid
 from scipy.optimize import curve_fit
+from sklearn.gaussian_process import GaussianProcessRegressor
 
-# from SpectrumCore.util.interpolate import interp_linear
+from SpectrumCore import Spectrum
 
 from . import doppler
 from ..math.functions import gaussian
@@ -10,7 +11,13 @@ from ..math.functions import gaussian
 
 class Feature:
 
-    def __init__(self, name: str, rest_wave: float, spectrum, gpr_model):
+    def __init__(
+        self,
+        name: str,
+        rest_wave: float,
+        spectrum: Spectrum,
+        gpr_model: GaussianProcessRegressor,
+    ) -> None:
         self.name = name
         self.rest_wave = rest_wave
 
@@ -22,7 +29,9 @@ class Feature:
 
         self.feature_data = None
 
-    def update_endpoints(self, lo_range: tuple[float], hi_range: tuple[float]):
+    def update_endpoints(
+        self, lo_range: tuple[float], hi_range: tuple[float]
+    ) -> None:
         left_data = self.spectrum.between(lo_range)
         left_ind = left_data[:, 1].argmax()
         self.wave_left = left_data[left_ind, 0]
@@ -33,12 +42,14 @@ class Feature:
 
         self.reset_feature_data()
 
-    def reset_feature_data(self):
+    def reset_feature_data(self) -> None:
         self.feature_data = self.spectrum.between(
             (self.wave_left, self.wave_right)
         )
 
-    def velocity(self, velocity_method=None, *args, **kwargs):
+    def velocity(
+        self, velocity_method: str | None = None, *args, **kwargs
+    ) -> tuple[float]:
         if velocity_method is None:
             velocity_method = 'minimum'
 
@@ -49,7 +60,9 @@ class Feature:
         else:
             print('Invalid velocity method given')
 
-    def _velocity_minimum(self, n_samples=100, *args, **kwargs):
+    def _velocity_minimum(
+        self, n_samples: int = 100, *args, **kwargs
+    ) -> tuple[float]:
         wave = self.feature_data[:, 0]
         flux = self.feature_data[:, 1]
 
@@ -80,9 +93,13 @@ class Feature:
         return vel, vel_err, draw_point
 
     def _velocity_blue_edge(
-        self, n_samples=100, feat_profile=None, profile_params=None,
-        *args, **kwargs
-    ):
+        self,
+        n_samples: int = 100,
+        feat_profile: str | None = None,
+        profile_params: tuple[float] | None = None,
+        *args,
+        **kwargs,
+    ) -> tuple[float]:
         wave = self.feature_data[:, 0]
         flux = self.feature_data[:, 1]
 
@@ -127,7 +144,7 @@ class Feature:
 
         return vel, vel_err, draw_point
 
-    def pEW(self, n_samples=100, *args, **kwargs):
+    def pEW(self, n_samples: int = 100, *args, **kwargs) -> tuple[float]:
         wave = self.feature_data[:, 0]
         flux = self.feature_data[:, 1]
         endpoints = self.feature_data[[0, -1], :2]

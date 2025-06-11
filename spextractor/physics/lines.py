@@ -59,7 +59,7 @@ sn_types = {
 }
 
 
-def get_features(sn_type: str):
+def get_features(sn_type: str) -> dict:
     lines = sn_types[sn_type]
 
     line_info = {}

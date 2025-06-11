@@ -1,5 +1,6 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.gaussian_process import GaussianProcessRegressor
 
 from SpectrumCore.Spectrum import Spectrum
 from SpectrumCore.util.interpolate import interp_linear
@@ -15,8 +16,13 @@ from .math import gpr
 class Spextractor:
 
     def __init__(
-        self, data, plot=False, log=False, *args, **kwargs
-    ):
+        self,
+        data: str | np.ndarray,
+        plot: bool = False,
+        log: bool = False,
+        *args,
+        **kwargs,
+    ) -> None:
         """Constructor for the Spextractor class.
 
         Parameters
@@ -57,8 +63,9 @@ class Spextractor:
         log_fn = None
         if isinstance(data, str):
             log_fn = f'{data}.log'
-        self._logger = setup_log(filename=log_fn, log_to_file=log,
-                                 *args, **kwargs)
+        self._logger = setup_log(
+            filename=log_fn, log_to_file=log, *args, **kwargs
+        )
 
         self.spectrum = Spectrum(data, *args, **kwargs)
         self._preprocess_spectrum(*args, **kwargs)
@@ -77,7 +84,9 @@ class Spextractor:
         self.depth = {}
         self.depth_err = {}
 
-    def create_model(self, downsampling=None, *args, **kwargs):
+    def create_model(
+        self, downsampling: float = None, *args, **kwargs
+    ) -> GaussianProcessRegressor:
         """Makes specifications to the GPR model.
 
         Parameters
@@ -89,24 +98,24 @@ class Spextractor:
 
         Returns
         -------
-        GPy.models.GPRegression
+        sklearn.gaussian_process.GaussianProcessRegressor
             The GPR model that is created.
         """
         if downsampling is None:
             downsampling = 1.
         self._downsample(downsampling)
 
-        model = gpr.model(self.spectrum, logger=self._logger)
+        model = gpr.model(self.spectrum, self._logger)
 
         self._model = model
 
         return model
 
-    def reset_model(self):
+    def reset_model(self) -> None:
         """Clears the current GPR model."""
         self._model = None
 
-    def predict(self, X_pred):
+    def predict(self, X_pred: np.ndarray) -> np.ndarray:
         """Use the created GPR model to make a prediction at any given points.
 
         Parameters
@@ -124,9 +133,14 @@ class Spextractor:
         return gpr.predict(X_pred * wave_factor, self.model)
 
     def process(
-            self, features: tuple[str] = None, predict_res: int = 2000,
-            sn_type: str = None, manual_range: bool = False, *args, **kwargs
-    ):
+            self,
+            features: tuple[str] | None = None,
+            predict_res: int = 2000,
+            sn_type: str | None = None,
+            manual_range: bool = False,
+            *args,
+            **kwargs,
+    ) -> None:
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
 
@@ -256,26 +270,26 @@ class Spextractor:
         return self._model
 
     @property
-    def rsi(self):
+    def rsi(self) -> float:
         try:
             ld5800 = self.depth['Si II 5800A']
             ld6150 = self.depth['Si II 6150A']
-            _rsi = ld5800 / ld6150
+            rsi = ld5800 / ld6150
         except KeyError:
-            _rsi = np.nan
+            rsi = np.nan
 
-        return _rsi
+        return rsi
 
     @property
-    def rsi_err(self):
+    def rsi_err(self) -> float:
         try:
             ld5800_err = self.depth_err['Si II 5800A']
             ld6150_err = self.depth_err['Si II 6150A']
-            _rsi_err = np.sqrt(ld5800_err**2 + ld6150_err**2)
+            rsi_err = np.sqrt(ld5800_err**2 + ld6150_err**2)
         except KeyError:
-            _rsi_err = np.nan
+            rsi_err = np.nan
 
-        return _rsi_err
+        return rsi_err
 
     @property
     def plot(self):
@@ -284,26 +298,33 @@ class Spextractor:
         return self._fig, self._ax
 
     @property
-    def wave(self):
+    def wave(self) -> np.ndarray:
         return self.spectrum.wave
 
     @property
-    def flux(self):
+    def flux(self) -> np.ndarray:
         return self.spectrum.flux
 
     @property
-    def flux_denormalized(self):
+    def flux_denormalized(self) -> np.ndarray:
         return self.spectrum.flux_denormalized
 
     @property
-    def flux_norm(self):
+    def flux_norm(self) -> float:
         return self.spectrum.flux_norm
 
     def _preprocess_spectrum(
-        self, z: float = None, wave_range: tuple[float] = None,
-        remove_telluric=False, host_EBV=None, host_RV=None, MW_EBV=None,
-        MW_RV=3.1, *args, **kwargs
-    ):
+        self,
+        z: float | None = None,
+        wave_range: tuple[float] | None = None,
+        remove_telluric=False,
+        host_EBV: float | None = None,
+        host_RV: float | None = None,
+        MW_EBV: float | None = None,
+        MW_RV: float = 3.1,
+        *args,
+        **kwargs,
+    ) -> None:
         self.spectrum.remove_nans()
         self.spectrum.remove_nonpositive()
 
@@ -326,7 +347,7 @@ class Spextractor:
 
         self.spectrum.normalize_flux(method='max')
 
-    def _downsample(self, downsampling):
+    def _downsample(self, downsampling: float) -> None:
         """Handle downsampling."""
         n_points = len(self.spectrum)
         sample_limit = 4000
@@ -351,7 +372,7 @@ class Spextractor:
         )
         self._logger.info(msg)
 
-    def _setup_plot(self):
+    def _setup_plot(self) -> None:
         """Setup the spectrum plot."""
         self._fig, self._ax = basic_spectrum()
 

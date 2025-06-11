@@ -1,4 +1,5 @@
 import logging
+from logging import Logger
 import os.path
 
 
@@ -7,7 +8,13 @@ _default_log_dir = './log'
 _log_format = logging.Formatter('%(levelname)s: %(message)s')
 
 
-def add_file_handler(logger, filename=None, log_dir=None, *args, **kwargs):
+def add_file_handler(
+    logger: Logger,
+    filename: str | None = None,
+    log_dir: str | None = None,
+    *args,
+    **kwargs,
+):
     if log_dir is None:
         log_dir = _default_log_dir
 
@@ -34,7 +41,7 @@ def add_file_handler(logger, filename=None, log_dir=None, *args, **kwargs):
     return logger
 
 
-def add_console_handler(logger, *args, **kwargs):
+def add_console_handler(logger: Logger, *args, **kwargs) -> Logger:
     ch = logging.StreamHandler()
 
     ch.setFormatter(_log_format)
@@ -45,7 +52,9 @@ def add_console_handler(logger, *args, **kwargs):
     return logger
 
 
-def setup_log(verbose=False, log_to_file=False, *args, **kwargs):
+def setup_log(
+    verbose: bool = False, log_to_file: bool = False, *args, **kwargs
+) -> Logger:
     # Root logger
     logging.basicConfig(format='')
     logger = logging.getLogger('SPEXTRACTOR')

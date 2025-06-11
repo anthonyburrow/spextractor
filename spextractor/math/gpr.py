@@ -1,30 +1,36 @@
+from logging import Logger
+import numpy as np
+
 from sklearn.gaussian_process import GaussianProcessRegressor
 from sklearn.gaussian_process.kernels import Matern, WhiteKernel, ConstantKernel
 
+from SpectrumCore import Spectrum
 
-def model(spectrum, logger=None):
+
+def model(
+    spectrum: Spectrum, logger: Logger
+) -> GaussianProcessRegressor:
     """Calculate the GPy model for given data.
 
-    Uses GPy to determine a Gaussian process model based on given training
-    data and optimized hyperparameters.
+    Uses scikit-learn to determine a Gaussian process regression model based on
+    given training data and optimized hyperparameters.
 
     Parameters
     ----------
-    spectrum : Spectrum
+    spectrum : SpectrumCore.Spectrum
         Spectrum object to model.
+    logger : Logger
+        Logger object for logged output.
 
     Returns
     -------
-    m : GPy.models.GPRegression
+    m : sklearn.gaussian_process.GaussianProcessRegressor
         Fitted GPy model.
-    kernel : GPy.kern
-        Kernel with optimized hyperparameters.
-
     """
     kernel = (
-        ConstantKernel(0.5, (1e-2, 1e2)) *
-        Matern(length_scale=300., length_scale_bounds=(50., 1e4), nu=1.5) +
-        WhiteKernel(noise_level=1e-4, noise_level_bounds=(1e-5, 1e0))
+        ConstantKernel(0.5, (1e-2, 1e2))
+        * Matern(length_scale=300., length_scale_bounds=(50., 1e4), nu=1.5)
+        + WhiteKernel(noise_level=1e-4, noise_level_bounds=(1e-5, 1e0))
     )
 
     # Add flux uncertainty to kernel diagonal
@@ -52,7 +58,9 @@ def model(spectrum, logger=None):
     return gpr
 
 
-def predict(X_pred, gpr):
+def predict(
+    X_pred: np.ndarray, gpr: GaussianProcessRegressor
+) -> tuple[np.ndarray]:
     y_pred, y_std = gpr.predict(X_pred.reshape(-1, 1), return_std=True)
 
     return y_pred, y_std

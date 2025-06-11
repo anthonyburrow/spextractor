@@ -1,7 +1,7 @@
 c = 299.792458   # 10^3 km/s
 
 
-def velocity(lam, lam_err, lam0):
+def velocity(lam: float, lam_err: float, lam0: float) -> tuple[float]:
     '''Relativistic Doppler shift (reverse).'''
     l_ratio = lam / lam0
     vel = -c * (l_ratio**2 - 1.) / (l_ratio**2 + 1.)
