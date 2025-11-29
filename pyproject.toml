@@ -32,5 +32,34 @@ dependencies = [
     "SpectrumCore @ git+https://github.com/anthonyburrow/SpectrumCore.git"
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+]
+
 [project.urls]
 Repository = "https://github.com/anthonyburrow/spextractor.git"
+
+[tool.ruff]
+line-length = 79
+
+[tool.ruff.lint]
+select = [
+    "E",  # pycodestyle errors
+    "W",  # pycodestyle warnings
+    "F",  # pyflakes
+    "I",  # isort
+    "B",  # flake8-bugbear
+    "C4", # flake8-comprehensions
+    "UP", # pyupgrade
+]
+
+ignore = []
+
+[tool.ruff.format]
+quote-style = "single"
+
+[tool.ruff.lint.isort]
+force-sort-within-sections = true

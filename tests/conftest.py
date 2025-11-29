@@ -1,6 +1,6 @@
-import pytest
 import os
 
+import pytest
 
 _root_dir = f'{os.path.dirname(__file__)}/..'
 _plot_dir = f'{_root_dir}/tests/plots'

@@ -1,7 +1,7 @@
 import numpy as np
+from SpectrumCore.plot import basic_spectrum
 
 from spextractor import Spextractor
-from SpectrumCore.plot import basic_spectrum
 
 
 def test_prediction(file_optical, plot_dir, can_plot):
@@ -11,7 +11,7 @@ def test_prediction(file_optical, plot_dir, can_plot):
     }
     spex = Spextractor(file_optical, **params)
 
-    spex.create_model(downsampling=3.)
+    spex.create_model(downsampling=3.0)
 
     fig, ax = spex.plot
 
@@ -29,7 +29,7 @@ def test_process(file_optical, plot_dir, can_plot):
     }
     spex = Spextractor(file_optical, **params)
 
-    spex.create_model(downsampling=3.)
+    spex.create_model(downsampling=3.0)
     spex.process()
 
     fig, ax = spex.plot
@@ -50,7 +50,7 @@ def test_prediction_NIR(file_NIR, plot_dir, can_plot):
     }
     spex = Spextractor(file_NIR, **params)
 
-    spex.create_model(downsampling=3.)
+    spex.create_model(downsampling=3.0)
 
     features = ('Si II 6150A', 'Si II 5800A')
     spex.process(features)
@@ -71,7 +71,7 @@ def test_prediction_optical_external(file_optical, plot_dir, can_plot):
     }
     spex = Spextractor(file_optical, **params)
 
-    spex.create_model(downsampling=3.)
+    spex.create_model(downsampling=3.0)
 
     # Plot
     fig, ax = basic_spectrum()
@@ -80,14 +80,11 @@ def test_prediction_optical_external(file_optical, plot_dir, can_plot):
     flux = spex.spectrum.flux
     error = spex.spectrum.error
 
-    ax.set_ylim(0., 1.)
+    ax.set_ylim(0.0, 1.0)
 
-    ax.plot(
-        wave, flux, color='k', alpha=0.7, lw=1, zorder=0
-    )
+    ax.plot(wave, flux, color='k', alpha=0.7, lw=1, zorder=0)
     ax.fill_between(
-        wave, flux - error, flux + error,
-        color='grey', alpha=0.5, zorder=-1
+        wave, flux - error, flux + error, color='grey', alpha=0.5, zorder=-1
     )
 
     wave_pred = np.linspace(
@@ -95,13 +92,14 @@ def test_prediction_optical_external(file_optical, plot_dir, can_plot):
     )
     flux_pred, std_pred = spex.predict(wave_pred)
 
-    ax.plot(
-        wave_pred, flux_pred,
-        color='red', zorder=2, lw=1
-    )
+    ax.plot(wave_pred, flux_pred, color='red', zorder=2, lw=1)
     ax.fill_between(
-        wave_pred, flux_pred - std_pred, flux_pred + std_pred,
-        alpha=0.3, color='red', zorder=1
+        wave_pred,
+        flux_pred - std_pred,
+        flux_pred + std_pred,
+        alpha=0.3,
+        color='red',
+        zorder=1,
     )
 
     name = 'test_prediction_optical_external'
@@ -120,7 +118,7 @@ def test_prediction_NIR_external(file_NIR, plot_dir, can_plot):
     }
     spex = Spextractor(file_NIR, **params)
 
-    spex.create_model(downsampling=3.)
+    spex.create_model(downsampling=3.0)
 
     # Plot
     fig, ax = basic_spectrum()
@@ -130,30 +128,28 @@ def test_prediction_NIR_external(file_NIR, plot_dir, can_plot):
     flux = spex.spectrum.flux
     error = spex.spectrum.error
 
-    ax.set_ylim(0., 1.)
+    ax.set_ylim(0.0, 1.0)
 
-    ax.plot(
-        wave, flux, color='k', alpha=0.7, lw=1, zorder=0
-    )
+    ax.plot(wave, flux, color='k', alpha=0.7, lw=1, zorder=0)
     ax.fill_between(
-        wave, flux - error, flux + error,
-        color='grey', alpha=0.5, zorder=-1
+        wave, flux - error, flux + error, color='grey', alpha=0.5, zorder=-1
     )
 
     wave_pred = np.linspace(
         spex.spectrum.wave_start / wave_factor,
         spex.spectrum.wave_end / wave_factor,
-        2000
+        2000,
     )
     flux_pred, std_pred = spex.predict(wave_pred)
 
-    ax.plot(
-        wave_pred, flux_pred,
-        color='red', zorder=2, lw=1
-    )
+    ax.plot(wave_pred, flux_pred, color='red', zorder=2, lw=1)
     ax.fill_between(
-        wave_pred, flux_pred - std_pred, flux_pred + std_pred,
-        alpha=0.3, color='red', zorder=1
+        wave_pred,
+        flux_pred - std_pred,
+        flux_pred + std_pred,
+        alpha=0.3,
+        color='red',
+        zorder=1,
     )
 
     name = 'test_prediction_NIR_external'

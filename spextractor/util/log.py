@@ -2,7 +2,6 @@ import logging
 from logging import Logger
 import os.path
 
-
 _default_log_dir = './log'
 
 _log_format = logging.Formatter('%(levelname)s: %(message)s')

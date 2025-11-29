@@ -1,6 +1,7 @@
 __pycache__/
 build/
 *.egg-info/
+.venv/
 
 example/log/
 tests/plots/

@@ -2,14 +2,13 @@ import matplotlib.pyplot as plt
 
 
 class ManualRange:
-
     def __init__(self, spectrum, feature_list, logger):
         self.w = spectrum.wave
         self.f = spectrum.flux
         self.feature_list = feature_list
         self.logger = logger
 
-        self.cid = None
+        self.cid: int | None = None
 
         self.fig, self.ax = plt.subplots(figsize=(10, 6), dpi=150)
 
@@ -32,7 +31,7 @@ class ManualRange:
         wave_left = self.w[0] - spacing
         wave_right = self.w[-1] + spacing
         self.ax.set_xlim(wave_left, wave_right)
-        self.ax.set_ylim(0., 1.05)
+        self.ax.set_ylim(0.0, 1.05)
 
     def init_select_feature(self):
         self.init_plot()
@@ -49,7 +48,7 @@ class ManualRange:
             self.ax.axvline(x_right, ls='-', color='tab:blue', alpha=0.3)
             self.ax.axvspan(x_left, x_right, alpha=0.2, color='tab:blue')
 
-            self.ax.text(x_left + 30., y_pos, feature.name, rotation=90.)
+            self.ax.text(x_left + 30.0, y_pos, feature.name, rotation=90.0)
 
         self.fig.canvas.draw()
 
@@ -58,6 +57,9 @@ class ManualRange:
         )
 
     def select_feature(self, event):
+        if self.cid is None:
+            raise RuntimeError('No active connection for feature selection.')
+
         for feature in self.feature_list:
             if feature.wave_left < event.xdata < feature.wave_right:
                 break
@@ -105,6 +107,12 @@ class ManualRange:
             self.end_bound_change()
 
     def end_bound_change(self):
+        if self.cid is None:
+            raise RuntimeError('No active connection for feature selection.')
+
+        if self.selected_feature is None:
+            raise RuntimeError('No feature selected for bound change.')
+
         self.fig.canvas.mpl_disconnect(self.cid)
 
         new_lo_range = tuple(self.new_bounds[0:2])

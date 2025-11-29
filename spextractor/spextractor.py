@@ -1,20 +1,18 @@
-import numpy as np
 import matplotlib.pyplot as plt
+import numpy as np
 from sklearn.gaussian_process import GaussianProcessRegressor
-
+from SpectrumCore.plot import basic_spectrum
 from SpectrumCore.Spectrum import Spectrum
 from SpectrumCore.util.interpolate import interp_linear
-from SpectrumCore.plot import basic_spectrum
 
+from .math import gpr
+from .physics.feature import Feature
+from .physics.lines import sn_lines, sn_types
 from .util.log import setup_log
 from .util.manual import ManualRange
-from .physics.feature import Feature
-from .physics.lines import sn_types, sn_lines
-from .math import gpr
 
 
 class Spextractor:
-
     def __init__(
         self,
         data: str | np.ndarray,
@@ -64,7 +62,7 @@ class Spextractor:
         if isinstance(data, str):
             log_fn = f'{data}.log'
         self._logger = setup_log(
-            filename=log_fn, log_to_file=log, *args, **kwargs
+            *args, filename=log_fn, log_to_file=log, **kwargs
         )
 
         self.spectrum = Spectrum(data, *args, **kwargs)
@@ -75,7 +73,7 @@ class Spextractor:
         self._fig, self._ax = None, None
 
         # Undefined instance attributes
-        self._model = None
+        self._model: GaussianProcessRegressor | None = None
 
         self.pew = {}
         self.pew_err = {}
@@ -85,7 +83,7 @@ class Spextractor:
         self.depth_err = {}
 
     def create_model(
-        self, downsampling: float = None, *args, **kwargs
+        self, downsampling: float | None = None, *args, **kwargs
     ) -> GaussianProcessRegressor:
         """Makes specifications to the GPR model.
 
@@ -102,12 +100,12 @@ class Spextractor:
             The GPR model that is created.
         """
         if downsampling is None:
-            downsampling = 1.
+            downsampling = 1.0
         self._downsample(downsampling)
 
-        model = gpr.model(self.spectrum, self._logger)
-
-        self._model = model
+        model: GaussianProcessRegressor = gpr.model(
+            self.spectrum, self._logger
+        )
 
         return model
 
@@ -115,7 +113,7 @@ class Spextractor:
         """Clears the current GPR model."""
         self._model = None
 
-    def predict(self, X_pred: np.ndarray) -> np.ndarray:
+    def predict(self, X_pred: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """Use the created GPR model to make a prediction at any given points.
 
         Parameters
@@ -133,13 +131,13 @@ class Spextractor:
         return gpr.predict(X_pred * wave_factor, self.model)
 
     def process(
-            self,
-            features: tuple[str] | None = None,
-            predict_res: int = 2000,
-            sn_type: str | None = None,
-            manual_range: bool = False,
-            *args,
-            **kwargs,
+        self,
+        features: tuple[str, ...] | None = None,
+        predict_res: int = 2000,
+        sn_type: str | None = None,
+        manual_range: bool = False,
+        *args,
+        **kwargs,
     ) -> None:
         """Calculate the line velocities, pEWs, and line depths of each
            feature.
@@ -200,7 +198,7 @@ class Spextractor:
         if manual_range:
             self._logger.info('Manually changing feature bounds...')
             if self._fig is not None:
-                self._fig, self._ax = None
+                self._fig, self._ax = None, None
                 plt.close('all')
 
             _ = ManualRange(self.spectrum, feature_list, self._logger)
@@ -214,7 +212,7 @@ class Spextractor:
             self.vel[feature.name] = vel
             self.vel_err[feature.name] = vel_err
 
-            if np.isnan(vel) or vel < 0.:
+            if np.isnan(vel) or vel < 0.0:
                 self.pew[feature.name] = np.nan
                 self.pew_err[feature.name] = np.nan
                 continue
@@ -225,12 +223,17 @@ class Spextractor:
             wave_factor = self.spectrum.wave_factor
             if self._plot:
                 self._ax.axvline(
-                    draw_point[0] / wave_factor, ymax=draw_point[1],
-                    color='k', linestyle='--'
+                    draw_point[0] / wave_factor,
+                    ymax=draw_point[1],
+                    color='k',
+                    linestyle='--',
                 )
                 self._ax.text(
-                    (draw_point[0] + 30.) / wave_factor, 0.015, feature.name,
-                    rotation=90., fontsize=8.
+                    (draw_point[0] + 30.0) / wave_factor,
+                    0.015,
+                    feature.name,
+                    rotation=90.0,
+                    fontsize=8.0,
                 )
 
             pew, pew_err = feature.pEW(*args, **kwargs)
@@ -238,7 +241,7 @@ class Spextractor:
             self.pew[feature.name] = pew
             self.pew_err[feature.name] = pew_err
 
-            if np.isnan(pew) or pew < 0.:
+            if np.isnan(pew) or pew < 0.0:
                 continue
 
             if self._plot:
@@ -247,25 +250,30 @@ class Spextractor:
                 continuum = interp_linear(data[:, 0], feat_range)
 
                 self._ax.scatter(
-                    feat_range[:, 0] / wave_factor, feat_range[:, 1],
-                    color='k', s=30
+                    feat_range[:, 0] / wave_factor,
+                    feat_range[:, 1],
+                    color='k',
+                    s=30,
                 )
                 self._ax.fill_between(
-                    data[:, 0] / wave_factor, data[:, 1], continuum,
-                    color='#00a3cc', alpha=0.3
+                    data[:, 0] / wave_factor,
+                    data[:, 1],
+                    continuum,
+                    color='#00a3cc',
+                    alpha=0.3,
                 )
 
-        self._logger.handlers = []   # Close log handlers between instantiations
+        self._logger.handlers = []  # Close log handlers between instantiations
 
     @property
-    def model(self):
+    def model(self) -> GaussianProcessRegressor:
         if self._model is None:
             msg = (
                 'Attempted to use model without generating first. '
                 'Creating model with default arguments...'
             )
             self._logger.warning(msg)
-            self.create_model()
+            self._model = self.create_model()
 
         return self._model
 
@@ -316,7 +324,7 @@ class Spextractor:
     def _preprocess_spectrum(
         self,
         z: float | None = None,
-        wave_range: tuple[float] | None = None,
+        wave_range: tuple[float, float] | None = None,
         remove_telluric=False,
         host_EBV: float | None = None,
         host_RV: float | None = None,
@@ -329,20 +337,20 @@ class Spextractor:
         self.spectrum.remove_nonpositive()
 
         if remove_telluric:
-            self.spectrum.remove_telluric()   # TODO: AFTER MANGLING
+            self.spectrum.remove_telluric()  # TODO: AFTER MANGLING
 
-        if z is not None and z != 0.:
+        if z is not None and z != 0.0:
             self.spectrum.deredshift(z)
 
         if wave_range is not None:
             self.spectrum.prune(wave_range)
 
         # Milky Way extinction
-        if MW_EBV is not None and MW_EBV != 0. and MW_RV is not None:
+        if MW_EBV is not None and MW_EBV != 0.0 and MW_RV is not None:
             self.spectrum.deredden(E_BV=MW_EBV, R_V=MW_RV)
 
         # Host extinction
-        if host_EBV is not None and host_EBV != 0. and host_RV is not None:
+        if host_EBV is not None and host_EBV != 0.0 and host_RV is not None:
             self.spectrum.deredden(E_BV=host_EBV, R_V=host_RV)
 
         self.spectrum.normalize_flux(method='max')
@@ -360,7 +368,7 @@ class Spextractor:
             )
             self._logger.warning(msg)
 
-        if downsampling <= 1.:
+        if downsampling <= 1.0:
             return
 
         self.spectrum.downsample(factor=downsampling)
@@ -380,23 +388,27 @@ class Spextractor:
         wave = self.spectrum.wave / wave_factor
         flux = self.spectrum.flux
 
-        if wave_factor == 1.:
+        if wave_factor == 1.0:
             self._ax.set_xlabel(r'$\mathrm{Rest\ wavelength}\ (\AA)$', size=14)
         elif wave_factor == 1e4:
-            self._ax.set_xlabel(r'$\mathrm{Rest\ wavelength}\ (\mu m)$', size=14)
+            self._ax.set_xlabel(
+                r'$\mathrm{Rest\ wavelength}\ (\mu m)$', size=14
+            )
 
         self._ax.set_ylabel(r'$\mathrm{Normalized\ flux}$', size=14)
-        self._ax.set_ylim(0., 1.)
+        self._ax.set_ylim(0.0, 1.0)
 
         # Display (preprocessed) original data
-        self._ax.plot(
-            wave, flux, color='k', alpha=0.7, lw=1, zorder=0
-        )
+        self._ax.plot(wave, flux, color='k', alpha=0.7, lw=1, zorder=0)
         if self.spectrum.has_error:
             error = self.spectrum.error
             self._ax.fill_between(
-                wave, flux - error, flux + error,
-                color='grey', alpha=0.5, zorder=-1
+                wave,
+                flux - error,
+                flux + error,
+                color='grey',
+                alpha=0.5,
+                zorder=-1,
             )
 
         # Display the GPR
@@ -406,11 +418,7 @@ class Spextractor:
         mean, std = gpr.predict(wave_pred, self.model)
         wave_pred /= wave_factor
 
-        self._ax.plot(
-            wave_pred, mean,
-            color='red', zorder=2, lw=1
-        )
+        self._ax.plot(wave_pred, mean, color='red', zorder=2, lw=1)
         self._ax.fill_between(
-            wave_pred, mean - std, mean + std,
-            alpha=0.3, color='red', zorder=1
+            wave_pred, mean - std, mean + std, alpha=0.3, color='red', zorder=1
         )
