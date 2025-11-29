@@ -54,7 +54,7 @@ class SplineModel(InterpolationModel):
             sigma = 0.05 * y.mean()
             w = None
 
-        s = len(X) * sigma**2
+        s = len(X) * sigma**2 * 1e3
         self._model = UnivariateSpline(X, y, w=w, k=self.k, s=s)
 
         if self._logger:

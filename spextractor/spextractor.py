@@ -111,11 +111,11 @@ class Spextractor:
         InterpolationModel
             The interpolation model that is created.
         """
-        downsampling = downsampling or 1.0
-        self._downsample(downsampling)
-
         model_type = model_type.lower() or 'gpr'
         if model_type == 'gpr':
+            downsampling = downsampling or 1.0
+            self._downsample(downsampling)
+
             model = GaussianProcessModel(self._logger)
         elif model_type == 'spline':
             model = SplineModel(self._logger, k=3)
@@ -331,9 +331,9 @@ class Spextractor:
         return rsi_err
 
     @property
-    def plot(self):
-        if self._plot and self._fig is None:
-            self._setup_plot()
+    def plot(self) -> tuple[Figure, Axes]:
+        if self._fig is None or self._ax is None:
+            self._fig, self._ax = self._setup_plot()
         return self._fig, self._ax
 
     @property
@@ -411,7 +411,7 @@ class Spextractor:
         )
         self._logger.info(msg)
 
-    def _setup_plot(self) -> None:
+    def _setup_plot(self) -> tuple[Figure, Axes]:
         """Setup the spectrum plot."""
         self._fig, self._ax = basic_spectrum()
 
@@ -464,3 +464,5 @@ class Spextractor:
         else:
             mean = result
             self._ax.plot(wave_pred, mean, color='red', zorder=2, lw=1)
+
+        return self._fig, self._ax
