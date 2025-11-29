@@ -1,13 +1,16 @@
+from matplotlib.axes import Axes
+from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
 import numpy as np
-from sklearn.gaussian_process import GaussianProcessRegressor
 from SpectrumCore.plot import basic_spectrum
 from SpectrumCore.Spectrum import Spectrum
 from SpectrumCore.util.interpolate import interp_linear
 
-from .math import gpr
+from .math.GaussianProcessModel import GaussianProcessModel
+from .math.InterpolationModel import InterpolationModel
+from .math.SplineModel import SplineModel
 from .physics.feature import Feature
-from .physics.lines import sn_lines, sn_types
+from .physics.lines import FEATURE_RANGES, FEATURE_REST_WAVES, sn_types
 from .util.log import setup_log
 from .util.manual import ManualRange
 
@@ -29,8 +32,9 @@ class Spextractor:
             Spectral data (can be unnormalized) where columns are wavelengths
             (Angstroms), flux, and flux uncertainty.
         plot : bool, optional
-            Create and hold a plot of the data, GPR, and velocity/pEW
-            information that may be calculated. False by default.
+            Create and hold a plot of the data, interpolation model
+            prediction, and velocity/pEW information that may be
+            calculated. False by default.
         log : bool, optional
             Determines whether or not a file is created to log console output.
 
@@ -70,10 +74,11 @@ class Spextractor:
 
         # Setup primary plot of (processed but unnormalized) data
         self._plot = plot
-        self._fig, self._ax = None, None
+        self._fig: Figure | None = None
+        self._ax: Axes | None = None
 
         # Undefined instance attributes
-        self._model: GaussianProcessRegressor | None = None
+        self._model: InterpolationModel | None = None
 
         self.pew = {}
         self.pew_err = {}
@@ -83,38 +88,54 @@ class Spextractor:
         self.depth_err = {}
 
     def create_model(
-        self, downsampling: float | None = None, *args, **kwargs
-    ) -> GaussianProcessRegressor:
-        """Makes specifications to the GPR model.
+        self,
+        model_type: str = 'gpr',
+        downsampling: float | None = None,
+        *args,
+        **kwargs,
+    ) -> InterpolationModel:
+        """Makes specifications to the interpolation model.
 
         Parameters
         ----------
+        model_type : str, optional
+            Type of model to create. Options are 'gpr' for Gaussian Process
+            Regression or 'spline' for UnivariateSpline. Default is 'gpr'.
         downsampling : float, optional
-            Downsampling factor used for the GPR fit. Downsampled data will
+            Downsampling factor used for the model fit. Downsampled data will
             thus be `1 / downsampling` of its original size. If `downsampling
             <= 1.`, the original data will be used.
 
         Returns
         -------
-        sklearn.gaussian_process.GaussianProcessRegressor
-            The GPR model that is created.
+        InterpolationModel
+            The interpolation model that is created.
         """
-        if downsampling is None:
-            downsampling = 1.0
+        downsampling = downsampling or 1.0
         self._downsample(downsampling)
 
-        model: GaussianProcessRegressor = gpr.model(
-            self.spectrum, self._logger
-        )
+        model_type = model_type.lower() or 'gpr'
+        if model_type == 'gpr':
+            model = GaussianProcessModel(self._logger)
+        elif model_type == 'spline':
+            model = SplineModel(self._logger, k=3)
+        else:
+            raise ValueError(
+                f"Unknown model_type '{model_type}'. Choose 'gpr' or 'spline'."
+            )
+
+        model.fit(self.spectrum)
 
         return model
 
     def reset_model(self) -> None:
-        """Clears the current GPR model."""
+        """Clears the current interpolation model."""
         self._model = None
 
-    def predict(self, X_pred: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-        """Use the created GPR model to make a prediction at any given points.
+    def predict(
+        self, X_pred: np.ndarray
+    ) -> np.ndarray | tuple[np.ndarray, np.ndarray]:
+        """Use the created interpolation model to predict at given points.
 
         Parameters
         ----------
@@ -123,12 +144,12 @@ class Spextractor:
 
         Returns
         -------
-        (numpy.ndarray, numpy.ndarray)
-            A tuple consisting of the mean and uncertainty values calculated at
-            each of the prediction points.
+        numpy.ndarray or tuple[numpy.ndarray, numpy.ndarray]
+            For Gaussian Process model: a tuple of (mean, uncertainty).
+            For spline model: array of predicted mean values only.
         """
         wave_factor = self.spectrum.wave_factor
-        return gpr.predict(X_pred * wave_factor, self.model)
+        return self.model.predict(X_pred * wave_factor)
 
     def process(
         self,
@@ -149,7 +170,8 @@ class Spextractor:
             properties. These must be included in "./physics/lines.py". By
             default, every feature in "lines.py" is processed.
         predict_res : int, optional
-            Sample size (resolution) of values predicted by GPR model.
+            Sample size (resolution) of values predicted by interpolation
+            model.
         sn_type : str, optional
             Type of SN, used to determine which features are able to be
             processed. This must be a key in "./physics/lines.py" ('Ia', 'Ib',
@@ -161,11 +183,18 @@ class Spextractor:
         **kwargs:
             velocity_method
         """
-        gpr_wave = np.linspace(
+        model_wave = np.linspace(
             self.spectrum.wave_start, self.spectrum.wave_end, predict_res
         )
-        gpr_mean, gpr_std = gpr.predict(gpr_wave, self.model)
-        gpr_spectrum = Spectrum(np.c_[gpr_wave, gpr_mean, gpr_std])
+        result = self.model.predict(model_wave)
+
+        # Handle both GPR (returns tuple) and spline (returns single array)
+        if isinstance(result, tuple):
+            model_mean, model_std = result
+            model_spectrum = Spectrum(np.c_[model_wave, model_mean, model_std])
+        else:
+            model_mean = result
+            model_spectrum = Spectrum(np.c_[model_wave, model_mean])
 
         if features is None:
             if sn_type is None:
@@ -174,21 +203,22 @@ class Spextractor:
 
         feature_list = []
         for feature in features:
-            feature_info = sn_lines[feature]
+            rest_wave = FEATURE_REST_WAVES[feature]
+            ranges = FEATURE_RANGES[feature]
 
-            lo_range = feature_info['lo_range']
-            hi_range = feature_info['hi_range']
+            lo_range = ranges['lo_range']
+            hi_range = ranges['hi_range']
 
-            if lo_range[0] < gpr_spectrum.wave_start:
+            if lo_range[0] < model_spectrum.wave_start:
                 continue
-            if gpr_spectrum.wave_end < hi_range[1]:
+            if model_spectrum.wave_end < hi_range[1]:
                 continue
 
             feature_obj = Feature(
                 name=feature,
-                rest_wave=feature_info['rest'],
-                spectrum=gpr_spectrum,
-                gpr_model=self.model,
+                rest_wave=rest_wave,
+                spectrum=model_spectrum,
+                model=self.model,
             )
 
             feature_obj.update_endpoints(lo_range, hi_range)
@@ -221,7 +251,7 @@ class Spextractor:
             self.vel_err[feature.name] = vel_err
 
             wave_factor = self.spectrum.wave_factor
-            if self._plot:
+            if self._plot and self._ax is not None:
                 self._ax.axvline(
                     draw_point[0] / wave_factor,
                     ymax=draw_point[1],
@@ -244,7 +274,7 @@ class Spextractor:
             if np.isnan(pew) or pew < 0.0:
                 continue
 
-            if self._plot:
+            if self._plot and self._ax is not None:
                 data = feature.feature_data
                 feat_range = data[[0, -1], :2]
                 continuum = interp_linear(data[:, 0], feat_range)
@@ -266,7 +296,7 @@ class Spextractor:
         self._logger.handlers = []  # Close log handlers between instantiations
 
     @property
-    def model(self) -> GaussianProcessRegressor:
+    def model(self) -> InterpolationModel:
         if self._model is None:
             msg = (
                 'Attempted to use model without generating first. '
@@ -411,14 +441,25 @@ class Spextractor:
                 zorder=-1,
             )
 
-        # Display the GPR
+        # Display the model prediction
         wave_pred = np.linspace(
             self.spectrum.wave_start, self.spectrum.wave_end, 2000
         )
-        mean, std = gpr.predict(wave_pred, self.model)
+        result = self.model.predict(wave_pred)
         wave_pred /= wave_factor
 
-        self._ax.plot(wave_pred, mean, color='red', zorder=2, lw=1)
-        self._ax.fill_between(
-            wave_pred, mean - std, mean + std, alpha=0.3, color='red', zorder=1
-        )
+        # Handle both GPR (returns tuple) and spline (returns single array)
+        if isinstance(result, tuple):
+            mean, std = result
+            self._ax.plot(wave_pred, mean, color='red', zorder=2, lw=1)
+            self._ax.fill_between(
+                wave_pred,
+                mean - std,
+                mean + std,
+                alpha=0.3,
+                color='red',
+                zorder=1,
+            )
+        else:
+            mean = result
+            self._ax.plot(wave_pred, mean, color='red', zorder=2, lw=1)
