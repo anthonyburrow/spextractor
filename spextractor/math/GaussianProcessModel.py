@@ -20,7 +20,14 @@ class GaussianProcessModel(InterpolationModel):
         y_pred, y_std = model.predict(wavelengths)
     """
 
-    def __init__(self, logger):
+    def __init__(self, logger=None):
+        """Initialize Gaussian Process model.
+
+        Parameters
+        ----------
+        logger : logging.Logger | None, optional
+            Logger for diagnostic output. If None, logging is suppressed.
+        """
         self._logger = logger
         self._model: GaussianProcessRegressor | None = None
 
@@ -52,13 +59,15 @@ class GaussianProcessModel(InterpolationModel):
             n_restarts_optimizer=0,
         )
 
-        self._logger.info('Created GP model')
-        self._logger.info('Optimizing hyperparameters...')
+        if self._logger:
+            self._logger.info('Created GP model')
+            self._logger.info('Optimizing hyperparameters...')
 
         X = spectrum.wave
         y = spectrum.flux
         self._model.fit(X.reshape(-1, 1), y)
-        self._logger.info(self._model.kernel_)
+        if self._logger:
+            self._logger.info(self._model.kernel_)
 
         return self._model
 

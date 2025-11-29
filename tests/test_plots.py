@@ -15,6 +15,9 @@ def test_prediction(file_optical, plot_dir, can_plot):
 
     fig, ax = spex.plot
 
+    assert fig is not None
+    assert ax is not None
+
     name = 'test_prediction'
     ax.set_title(f'{name}')
     fn = f'{plot_dir}/{name}.png'
@@ -33,6 +36,9 @@ def test_process(file_optical, plot_dir, can_plot):
     spex.process()
 
     fig, ax = spex.plot
+
+    assert fig is not None
+    assert ax is not None
 
     name = 'test_process'
     ax.set_title(f'{name}')
@@ -56,6 +62,9 @@ def test_prediction_NIR(file_NIR, plot_dir, can_plot):
     spex.process(features)
 
     fig, ax = spex.plot
+
+    assert fig is not None
+    assert ax is not None
 
     name = 'test_prediction_NIR'
     ax.set_title(f'{name}')

@@ -126,6 +126,7 @@ class Spextractor:
 
         model.fit(self.spectrum)
 
+        self._model = model
         return model
 
     def reset_model(self) -> None:

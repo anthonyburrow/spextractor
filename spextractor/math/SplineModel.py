@@ -15,18 +15,15 @@ class SplineModel(InterpolationModel):
         y_pred = model.predict(wavelengths)
     """
 
-    def __init__(self, logger, k: int = 3):
-        """
-        Initialize the spline model.
+    def __init__(self, logger=None, k: int = 3):
+        """Initialize the spline model.
 
         Parameters
         ----------
-        logger : Logger
-            Logger object for logged output.
+        logger : logging.Logger | None, optional
+            Logger for diagnostic output. If None, logging suppressed.
         k : int, optional
             Degree of the spline (default: 3 for cubic spline).
-        s : float or None, optional
-            Smoothing factor. If None, s = len(data points).
         """
         self._logger = logger
         self._model: UnivariateSpline | None = None
@@ -50,7 +47,7 @@ class SplineModel(InterpolationModel):
         y = spectrum.flux
 
         # Use error as weights if available
-        if spectrum.has_error:
+        if spectrum.error is not None:
             sigma = spectrum.error.mean()
             w = 1.0 / spectrum.error
         else:
@@ -60,8 +57,9 @@ class SplineModel(InterpolationModel):
         s = len(X) * sigma**2
         self._model = UnivariateSpline(X, y, w=w, k=self.k, s=s)
 
-        self._logger.info('Created spline model')
-        self._logger.info(f'Spline degree: {self.k}, smoothing: {s}')
+        if self._logger:
+            self._logger.info('Created spline model')
+            self._logger.info(f'Spline degree: {self.k}, smoothing: {s}')
 
         return self._model
 
