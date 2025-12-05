@@ -18,7 +18,10 @@ jobs:
       - name: Create virtual environment
         run: make venv
       - name: Install dependencies
-        run: make install
+        run: |
+          make install
+          make install-dev
+          make install-gpytorch-cpu
       - name: Lint with Ruff
         run: make lint
         continue-on-error: true
