@@ -28,32 +28,48 @@ class GaussianProcessModel(InterpolationModel):
         logger : logging.Logger | None, optional
             Logger for diagnostic output. If None, logging is suppressed.
         """
+        super().__init__()
+
         self._logger = logger
         self._model: GaussianProcessRegressor | None = None
 
-        constant_kernel = ConstantKernel(0.5, (1e-2, 1e2))
-        matern_kernel = Matern(
-            length_scale=300.0,
-            length_scale_bounds=(50.0, 1e4),
-            nu=1.5,
-        )
-        white_kernel = WhiteKernel(
-            noise_level=1e-4,
-            noise_level_bounds=(1e-5, 1e0),
-        )
-        self.kernel = constant_kernel * matern_kernel + white_kernel
+        self._length_scale_angstroms = 300.0
+        self._length_scale_bounds_angstroms = (50.0, 1e4)
 
     def fit(self, spectrum: Spectrum) -> GaussianProcessRegressor:
         """
         Fit the GP model to a Spectrum object.
         """
+        X_norm = self._store_normalization(spectrum.wave)
+        y = spectrum.flux
+
+        if self._x_std is None:
+            raise RuntimeError('Normalization parameters not set.')
+        length_scale_norm = self._length_scale_angstroms / self._x_std
+        length_scale_bounds_norm = (
+            self._length_scale_bounds_angstroms[0] / self._x_std,
+            self._length_scale_bounds_angstroms[1] / self._x_std,
+        )
+
+        constant_kernel = ConstantKernel(0.5, (1e-2, 1e2))
+        matern_kernel = Matern(
+            length_scale=length_scale_norm,
+            length_scale_bounds=length_scale_bounds_norm,
+            nu=1.5,
+        )
+        white_kernel = WhiteKernel(
+            noise_level=1e-4,
+            noise_level_bounds=(1e-6, 1e0),
+        )
+        kernel = constant_kernel * matern_kernel + white_kernel
+
         if spectrum.has_error:
             alpha = spectrum.error**2
         else:
             alpha = 1e-6
 
         self._model = GaussianProcessRegressor(
-            kernel=self.kernel,
+            kernel=kernel,
             alpha=alpha,
             normalize_y=False,
             n_restarts_optimizer=0,
@@ -63,9 +79,7 @@ class GaussianProcessModel(InterpolationModel):
             self._logger.info('Created GP model')
             self._logger.info('Optimizing hyperparameters...')
 
-        X = spectrum.wave
-        y = spectrum.flux
-        self._model.fit(X.reshape(-1, 1), y)
+        self._model.fit(X_norm.reshape(-1, 1), y)
         if self._logger:
             self._logger.info(self._model.kernel_)
 
@@ -78,8 +92,9 @@ class GaussianProcessModel(InterpolationModel):
         if self._model is None:
             raise RuntimeError('Model must be fit before prediction.')
 
+        X_norm = self._normalize_x(X_pred)
         y_pred, y_std = self._model.predict(  # type: ignore
-            X_pred.reshape(-1, 1), return_std=True
+            X_norm.reshape(-1, 1), return_std=True
         )
         return y_pred, y_std
 
@@ -100,4 +115,6 @@ class GaussianProcessModel(InterpolationModel):
         """
         if self._model is None:
             raise RuntimeError('Model must be fit before sampling.')
-        return self._model.sample_y(X.reshape(-1, 1), n_samples)
+
+        X_norm = self._normalize_x(X)
+        return self._model.sample_y(X_norm.reshape(-1, 1), n_samples)

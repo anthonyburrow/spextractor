@@ -20,7 +20,7 @@ Make specifications to the model and any downsampling that occurs beforehand.
 
 - This includes sigma-clipping, downsampling, etc. parameters (see docstring).
 """
-spex.create_model(downsampling=3.0)
+spex.create_model(model_type='SKI')
 
 """
 Do feature calculations (velocity, pEW, depth, etc.).

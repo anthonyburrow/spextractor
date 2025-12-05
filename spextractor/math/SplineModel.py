@@ -15,7 +15,7 @@ class SplineModel(InterpolationModel):
         y_pred = model.predict(wavelengths)
     """
 
-    def __init__(self, logger=None, k: int = 3):
+    def __init__(self, logger=None):
         """Initialize the spline model.
 
         Parameters
@@ -25,9 +25,11 @@ class SplineModel(InterpolationModel):
         k : int, optional
             Degree of the spline (default: 3 for cubic spline).
         """
+        super().__init__()
+
         self._logger = logger
         self._model: UnivariateSpline | None = None
-        self.k = k
+        self.k = 3
 
     def fit(self, spectrum: Spectrum) -> UnivariateSpline:
         """
@@ -43,10 +45,9 @@ class SplineModel(InterpolationModel):
         UnivariateSpline
             Fitted spline model.
         """
-        X = spectrum.wave
+        X_norm = self._store_normalization(spectrum.wave)
         y = spectrum.flux
 
-        # Use error as weights if available
         if spectrum.error is not None:
             sigma = spectrum.error.mean()
             w = 1.0 / spectrum.error
@@ -54,8 +55,8 @@ class SplineModel(InterpolationModel):
             sigma = 0.05 * y.mean()
             w = None
 
-        s = len(X) * sigma**2 * 1e3
-        self._model = UnivariateSpline(X, y, w=w, k=self.k, s=s)
+        s = len(X_norm) * sigma**2 * 1e3
+        self._model = UnivariateSpline(X_norm, y, w=w, k=self.k, s=s)
 
         if self._logger:
             self._logger.info('Created spline model')
@@ -80,5 +81,6 @@ class SplineModel(InterpolationModel):
         if self._model is None:
             raise RuntimeError('Model must be fit before prediction.')
 
-        result = self._model(X_pred)
+        X_norm = self._normalize_x(X_pred)
+        result = self._model(X_norm)
         return np.asarray(result)

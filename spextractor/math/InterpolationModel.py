@@ -9,7 +9,51 @@ class InterpolationModel(ABC):
     Abstract base class for spectrum interpolation models.
 
     Subclasses must implement fit() and predict() methods.
+
+    This base class handles X (wavelength) standardization automatically
+    to improve numerical conditioning for all interpolation methods.
     """
+
+    def __init__(self):
+        """Initialize normalization parameters."""
+        self._x_mean: float | None = None
+        self._x_std: float | None = None
+
+    def _normalize_x(self, X: np.ndarray) -> np.ndarray:
+        """
+        Standardize input wavelengths using stored mean and std.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Input wavelength values.
+
+        Returns
+        -------
+        np.ndarray
+            Standardized wavelength values.
+        """
+        if self._x_mean is None or self._x_std is None:
+            raise RuntimeError('Model must be fit before normalizing X.')
+        return (X - self._x_mean) / self._x_std
+
+    def _store_normalization(self, X: np.ndarray) -> np.ndarray:
+        """
+        Store normalization parameters and return normalized X.
+
+        Parameters
+        ----------
+        X : np.ndarray
+            Training wavelength values.
+
+        Returns
+        -------
+        np.ndarray
+            Standardized wavelength values.
+        """
+        self._x_mean = float(X.mean())
+        self._x_std = float(X.std())
+        return self._normalize_x(X)
 
     @abstractmethod
     def fit(self, spectrum: Spectrum):

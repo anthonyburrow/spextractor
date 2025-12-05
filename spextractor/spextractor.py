@@ -1,3 +1,5 @@
+from collections.abc import Iterable
+
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
 import matplotlib.pyplot as plt
@@ -9,6 +11,14 @@ from SpectrumCore.util.interpolate import interp_linear
 from .math.GaussianProcessModel import GaussianProcessModel
 from .math.InterpolationModel import InterpolationModel
 from .math.SplineModel import SplineModel
+
+try:
+    from .math.SKIModel import SKIModel
+
+    HAS_GPYTORCH = True
+except ImportError:
+    HAS_GPYTORCH = False
+
 from .physics.feature import Feature
 from .physics.lines import FEATURE_RANGES, FEATURE_REST_WAVES, sn_types
 from .util.log import setup_log
@@ -72,7 +82,6 @@ class Spextractor:
         self.spectrum = Spectrum(data, *args, **kwargs)
         self._preprocess_spectrum(*args, **kwargs)
 
-        # Setup primary plot of (processed but unnormalized) data
         self._plot = plot
         self._fig: Figure | None = None
         self._ax: Axes | None = None
@@ -100,7 +109,8 @@ class Spextractor:
         ----------
         model_type : str, optional
             Type of model to create. Options are 'gpr' for Gaussian Process
-            Regression or 'spline' for UnivariateSpline. Default is 'gpr'.
+            Regression, 'spline' for UnivariateSpline, or 'ski' for
+            Structured Kernel Interpolation GP. Default is 'gpr'.
         downsampling : float, optional
             Downsampling factor used for the model fit. Downsampled data will
             thus be `1 / downsampling` of its original size. If `downsampling
@@ -111,17 +121,26 @@ class Spextractor:
         InterpolationModel
             The interpolation model that is created.
         """
+        downsampling = downsampling or 1.0
+        self._downsample(downsampling)
+
         model_type = model_type.lower() or 'gpr'
         if model_type == 'gpr':
-            downsampling = downsampling or 1.0
-            self._downsample(downsampling)
-
             model = GaussianProcessModel(self._logger)
         elif model_type == 'spline':
-            model = SplineModel(self._logger, k=3)
+            model = SplineModel(self._logger)
+        elif model_type == 'ski':
+            if not HAS_GPYTORCH:
+                raise ImportError(
+                    'SKI model requires GPyTorch. '
+                    'Install with: `make install-gpytorch-gpu` or '
+                    '`make install-gpytorch-cpu`'
+                )
+            model = SKIModel(self._logger)
         else:
             raise ValueError(
-                f"Unknown model_type '{model_type}'. Choose 'gpr' or 'spline'."
+                f"Unknown model_type '{model_type}'. "
+                f"Choose 'gpr', 'spline', or 'ski'."
             )
 
         model.fit(self.spectrum)
@@ -154,7 +173,7 @@ class Spextractor:
 
     def process(
         self,
-        features: tuple[str, ...] | None = None,
+        features: Iterable[str] | None = None,
         predict_res: int = 2000,
         sn_type: str | None = None,
         manual_range: bool = False,
@@ -166,10 +185,11 @@ class Spextractor:
 
         Parameters
         ----------
-        features : tuple, optional
-            Iterable containing strings of features for which to calculate
-            properties. These must be included in "./physics/lines.py". By
-            default, every feature in "lines.py" is processed.
+        features : Iterable[str], optional
+            Iterable (list, tuple, etc.) containing strings of features for
+            which to calculate properties. These must be included in
+            "./physics/lines.py". By default, every feature in "lines.py" is
+            processed.
         predict_res : int, optional
             Sample size (resolution) of values predicted by interpolation
             model.
@@ -189,7 +209,6 @@ class Spextractor:
         )
         result = self.model.predict(model_wave)
 
-        # Handle both GPR (returns tuple) and spline (returns single array)
         if isinstance(result, tuple):
             model_mean, model_std = result
             model_spectrum = Spectrum(np.c_[model_wave, model_mean, model_std])
@@ -449,7 +468,6 @@ class Spextractor:
         result = self.model.predict(wave_pred)
         wave_pred /= wave_factor
 
-        # Handle both GPR (returns tuple) and spline (returns single array)
         if isinstance(result, tuple):
             mean, std = result
             self._ax.plot(wave_pred, mean, color='red', zorder=2, lw=1)
